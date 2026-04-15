@@ -109,10 +109,16 @@ pub async fn apply(
         bail!("지원하지 않는 mrpack formatVersion: {}", index.format_version);
     }
 
-    // 3. 클라이언트 대상 파일만
-    let client_files: Vec<&IndexFile> = index
+    // 3. 클라이언트 대상 파일만 (참조 수명 문제 피하려고 owned 로 복사)
+    struct Job {
+        path: String,
+        downloads: Vec<String>,
+        sha512: Option<String>,
+        sha1: Option<String>,
+    }
+    let jobs: Vec<Job> = index
         .files
-        .iter()
+        .into_iter()
         .filter(|f| {
             f.env
                 .as_ref()
@@ -120,22 +126,25 @@ pub async fn apply(
                 .map(|c| c != "unsupported")
                 .unwrap_or(true)
         })
+        .map(|f| Job {
+            path: f.path,
+            downloads: f.downloads,
+            sha512: f.hashes.sha512,
+            sha1: f.hashes.sha1,
+        })
         .collect();
 
-    tracing::info!(count = client_files.len(), "mrpack 파일 다운로드 대상");
+    tracing::info!(count = jobs.len(), "mrpack 파일 다운로드 대상");
 
     let mc_root: Arc<PathBuf> = Arc::new(minecraft_root.to_path_buf());
-    let total = client_files.len();
-    let progress_ref = progress;
+    let total = jobs.len();
 
     // 4. 병렬 다운로드 (bounded)
-    let results: Vec<Result<(String, String)>> = stream::iter(client_files.iter().enumerate())
-        .map(|(idx, f)| {
+    let results: Vec<Result<(String, String)>> = stream::iter(jobs.into_iter().enumerate())
+        .map(|(idx, job)| {
             let mc_root = Arc::clone(&mc_root);
-            let path = f.path.clone();
-            let downloads = f.downloads.clone();
-            let sha512 = f.hashes.sha512.clone();
-            let sha1 = f.hashes.sha1.clone();
+            let Job { path, downloads, sha512, sha1 } = job;
+            let progress_ref = progress;
             async move {
                 if downloads.is_empty() {
                     bail!("downloads 비어있음: {}", path);

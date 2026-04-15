@@ -84,31 +84,16 @@ pub async fn ensure_installed(
     let zip_path = dirs.cache.join(&asset.name);
     std::fs::create_dir_all(&dirs.cache)?;
 
+    // 진행률 세부 중계는 생략하고 단계 라벨만 전달 (MVP)
+    if let Some(cb) = progress {
+        cb(0, None, "Prism Launcher 다운로드 중");
+    }
     match &expected_sha {
         Some(sha) => {
-            if let Some(cb) = progress {
-                cb(0, None, "Prism Launcher 다운로드 중 (검증 활성)");
-            }
-            net::download_verified(
-                &asset.browser_download_url,
-                &zip_path,
-                sha,
-                progress.map(|p| {
-                    let pb: Box<dyn Fn(u64, Option<u64>) + Send + Sync> =
-                        Box::new(move |d, t| p(d, t, "Prism Launcher 다운로드 중"));
-                    pb
-                })
-                .as_deref(),
-            )
-            .await?;
+            net::download_verified(&asset.browser_download_url, &zip_path, sha, None).await?;
         }
         None => {
-            tracing::warn!(
-                "Prism 자산 sha256 파일이 없음 — 크기 기반 체크만 수행"
-            );
-            if let Some(cb) = progress {
-                cb(0, None, "Prism Launcher 다운로드 중 (sha 미제공)");
-            }
+            tracing::warn!("Prism 자산 sha256 파일이 없음 — 크기 기반 체크만 수행");
             net::download_plain(&asset.browser_download_url, &zip_path).await?;
         }
     }
