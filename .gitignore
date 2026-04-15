@@ -1,0 +1,28 @@
+# Rust
+/installer/target/
+/manifest-builder/target/
+**/*.rs.bk
+*.pdb
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Local env / secrets
+.env
+.env.local
+*.key
+*.pem
+
+# Build artifacts (배포 전용 dist/는 커밋하지 않음 — GitHub Release로만 배포)
+/dist/*.exe
+/dist/*.mrpack
+
+# Logs
+*.log

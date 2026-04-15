@@ -1,0 +1,67 @@
+[package]
+name = "cherishpack-installer"
+version = "0.1.0"
+edition = "2021"
+authors = ["CherishPack"]
+description = "CherishPack 모드팩 설치/패치/실행 부트스트래퍼"
+license = "MIT"
+
+[[bin]]
+name = "cherishpack-installer"
+path = "src/main.rs"
+
+[dependencies]
+# GUI
+iced = { version = "0.12", features = ["tokio", "image"] }
+
+# 비동기 런타임
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "process"] }
+
+# HTTP (rustls로 OpenSSL 의존 회피)
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
+futures-util = "0.3"
+
+# 직렬화
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 압축 (.mrpack = zip)
+zip = { version = "0.6", default-features = false, features = ["deflate"] }
+
+# 해시
+sha2 = "0.10"
+hex = "0.4"
+
+# 에러
+anyhow = "1"
+thiserror = "1"
+
+# 로깅
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+
+# 휴지통 이동 (삭제 안전장치)
+trash = "5"
+
+# Windows API (하드웨어 감지 / 경로)
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_System_SystemInformation",
+    "Win32_Foundation",
+    "Win32_System_Registry",
+    "Win32_UI_Shell",
+    "Win32_Storage_FileSystem",
+] }
+wmi = "0.14"
+
+[build-dependencies]
+winres = "0.1"
+
+# 크기 최적화 — 최종 exe 4~7MB 목표
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
