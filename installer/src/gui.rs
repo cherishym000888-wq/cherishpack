@@ -6,7 +6,7 @@
 use anyhow::Result;
 use iced::{
     executor,
-    widget::{button, column, container, progress_bar, row, scrollable, text, Space},
+    widget::{button, column, container, progress_bar, row, scrollable, text, text_input, Space},
     Alignment, Application, Command, Element, Length, Settings, Subscription, Theme,
 };
 use std::sync::{Arc, Mutex};
@@ -29,11 +29,17 @@ pub fn run(dirs: AppDirs) -> Result<()> {
         },
         flags: dirs,
         fonts: Vec::new(),
-        default_font: iced::Font::default(),
+        default_font: iced::Font::with_name("Malgun Gothic"),
         default_text_size: iced::Pixels(14.0),
         antialiasing: true,
     })
     .map_err(|e| anyhow::anyhow!("iced 실행 실패: {e}"))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthMode {
+    Offline,
+    Microsoft,
 }
 
 struct App {
@@ -41,6 +47,8 @@ struct App {
     screen: Screen,
     hw: HwSnapshot,
     chosen_preset: Preset,
+    auth_mode: AuthMode,
+    nickname: String,
     progress_done: u64,
     progress_total: Option<u64>,
     progress_label: String,
@@ -63,6 +71,8 @@ enum Screen {
 pub enum Msg {
     StartInstall,
     PickPreset(Preset),
+    PickAuth(AuthMode),
+    NicknameChanged(String),
     Launch,
     Close,
     Orc(OrcEvent),
@@ -83,6 +93,8 @@ impl Application for App {
                 screen: Screen::Welcome,
                 hw,
                 chosen_preset,
+                auth_mode: AuthMode::Offline,
+                nickname: "Player".to_string(),
                 progress_done: 0,
                 progress_total: None,
                 progress_label: String::new(),
@@ -106,21 +118,50 @@ impl Application for App {
                 self.chosen_preset = p;
                 Command::none()
             }
+            Msg::PickAuth(m) => {
+                self.auth_mode = m;
+                Command::none()
+            }
+            Msg::NicknameChanged(s) => {
+                // Minecraft 닉 제약: ASCII letters/digits/underscore, 최대 16자
+                let cleaned: String = s
+                    .chars()
+                    .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
+                    .take(16)
+                    .collect();
+                self.nickname = cleaned;
+                Command::none()
+            }
             Msg::StartInstall => {
                 let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<OrcEvent>();
                 *self.rx.lock().unwrap() = Some(rx);
                 let dirs = self.dirs.clone();
+                let nickname = if self.nickname.trim().is_empty() {
+                    "Player".to_string()
+                } else {
+                    self.nickname.clone()
+                };
                 let opts = RunOptions {
                     channel: Channel::Stable,
                     preset: Some(self.chosen_preset.key().to_string()),
                     auto_launch: false,
+                    offline_mode: self.auth_mode == AuthMode::Offline,
+                    offline_nickname: nickname,
                 };
                 tokio::spawn(async move { orchestrator::run(dirs, opts, tx).await });
                 self.screen = Screen::Installing;
                 Command::none()
             }
             Msg::Launch => {
-                // Prism 실행은 orchestrator의 auto_launch 대신 별도 버튼으로 처리 가능 — 여기선 단순 종료
+                let exe = self.dirs.prism_root.join("prismlauncher.exe");
+                if exe.exists() {
+                    let auto = self.auth_mode == AuthMode::Offline;
+                    let _ = crate::prism::spawn_detached_ex(
+                        &exe,
+                        &self.dirs.prism_root,
+                        auto,
+                    );
+                }
                 iced::window::close(iced::window::Id::MAIN)
             }
             Msg::Close => iced::window::close(iced::window::Id::MAIN),
@@ -256,6 +297,28 @@ impl App {
                 preset_btn("HIGH", Preset::High),
             ]
             .spacing(10),
+            Space::with_height(10),
+            text("플레이 방식").size(13),
+            row![
+                button(text(if self.auth_mode == AuthMode::Offline { "● 오프라인" } else { "○ 오프라인" }))
+                    .on_press(Msg::PickAuth(AuthMode::Offline)),
+                button(text(if self.auth_mode == AuthMode::Microsoft { "● Microsoft 로그인" } else { "○ Microsoft 로그인" }))
+                    .on_press(Msg::PickAuth(AuthMode::Microsoft)),
+            ].spacing(10),
+            {
+                let e: Element<'_, Msg> = if self.auth_mode == AuthMode::Offline {
+                    row![
+                        text("닉네임:").size(12),
+                        text_input("Player", &self.nickname)
+                            .on_input(Msg::NicknameChanged)
+                            .width(Length::Fixed(200.0)),
+                    ].spacing(8).align_items(Alignment::Center).into()
+                } else {
+                    text("설치 후 Prism 창이 열리면 계정 추가(로그인) 해주세요.")
+                        .size(11).into()
+                };
+                e
+            },
             Space::with_height(14),
             row![
                 button(text("설치 / 업데이트")).on_press(Msg::StartInstall),
@@ -316,10 +379,17 @@ impl App {
 
     fn view_done(&self, _launched: bool) -> Element<'_, Msg> {
         let content = column![
-            text("✓ 설치 완료").size(28),
-            text("이제 Prism Launcher 에서 CherishPack 인스턴스를 실행하세요.").size(13),
+            text("설치 완료").size(28),
+            text("Prism Launcher 에서 CherishPack 인스턴스를 실행하세요.").size(13),
+            Space::with_height(8),
+            text("· 바탕화면 / 시작메뉴에 '체리쉬월드' 바로가기가 생성되었습니다.").size(12),
+            text("· 오프라인 계정(Player) 이 자동으로 설정되어 있어 바로 플레이 가능합니다.").size(12),
+            text("  닉네임 변경은 Prism 우측 상단 계정 메뉴에서 할 수 있습니다.").size(11),
             Space::with_height(16),
-            button(text("종료")).on_press(Msg::Close),
+            row![
+                button(text("Prism 실행")).on_press(Msg::Launch),
+                button(text("종료")).on_press(Msg::Close),
+            ].spacing(12),
         ]
         .spacing(10)
         .align_items(Alignment::Center);

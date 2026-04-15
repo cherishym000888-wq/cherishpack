@@ -25,6 +25,7 @@ mod patcher;
 mod preserve;
 mod preset;
 mod prism;
+mod shortcut;
 mod state;
 mod uninstall;
 

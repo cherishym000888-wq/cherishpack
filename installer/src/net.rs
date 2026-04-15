@@ -3,7 +3,7 @@
 //! - `fetch_json` : 원격 JSON → 역직렬화
 //! - `download_to_file`: 스트리밍 다운로드 + 진행률 콜백 + sha256 검증
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Context, Result};
 use futures_util::StreamExt;
 use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
@@ -17,6 +17,16 @@ fn client() -> Result<reqwest::Client> {
         .user_agent(USER_AGENT)
         .timeout(Duration::from_secs(60))
         .connect_timeout(Duration::from_secs(15))
+        .build()
+        .map_err(Into::into)
+}
+
+/// 큰 파일 다운로드용 — 전체 timeout 없음, 읽기 idle timeout만.
+fn download_client() -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .user_agent(USER_AGENT)
+        .connect_timeout(Duration::from_secs(30))
+        .read_timeout(Duration::from_secs(60)) // 60초 동안 한 바이트도 안 오면 끊음
         .build()
         .map_err(Into::into)
 }
@@ -46,7 +56,7 @@ pub async fn download_plain(url: &str, dst: &Path) -> Result<()> {
     if let Some(parent) = dst.parent() {
         tokio::fs::create_dir_all(parent).await.ok();
     }
-    let resp = client()?
+    let resp = download_client()?
         .get(url)
         .send()
         .await
@@ -77,36 +87,106 @@ pub async fn fetch_json<T: DeserializeOwned>(url: &str) -> Result<T> {
 pub type ProgressFn = dyn Fn(u64, Option<u64>) + Send + Sync;
 
 /// 파일을 다운로드하고 sha256이 일치하면 OK, 아니면 파일 삭제 + 에러.
+///
+/// 이어받기 지원: `<dst>.part` 파일이 있으면 Range 요청으로 재개.
+/// 서버가 Range를 무시하면(응답이 200) 처음부터 다시 받는다.
 pub async fn download_verified(
     url: &str,
     dst: &Path,
     expected_sha256: &str,
     progress: Option<&ProgressFn>,
 ) -> Result<()> {
+    use tokio::io::AsyncReadExt;
+
     if let Some(parent) = dst.parent() {
         tokio::fs::create_dir_all(parent).await.ok();
     }
 
-    let resp = client()?
-        .get(url)
+    let part_path = {
+        let mut p = dst.as_os_str().to_owned();
+        p.push(".part");
+        std::path::PathBuf::from(p)
+    };
+
+    // 이미 완성본이 있고 해시가 맞으면 스킵
+    if dst.exists() {
+        if let Ok(existing) = crate::hash::sha256_file(dst) {
+            if existing.eq_ignore_ascii_case(expected_sha256) {
+                tracing::info!(path = %dst.display(), "기존 파일 해시 일치 — 다운로드 스킵");
+                return Ok(());
+            }
+            tracing::warn!("기존 파일 해시 불일치 — 삭제 후 재다운로드");
+            let _ = tokio::fs::remove_file(dst).await;
+        }
+    }
+
+    // 재개 가능한 기존 part 확인 + 기존 바이트 해시 누적
+    let mut hasher = Sha256::new();
+    let mut downloaded: u64 = 0;
+    let resume_pos: u64 = match tokio::fs::metadata(&part_path).await {
+        Ok(m) => {
+            let n = m.len();
+            if n > 0 {
+                // 기존 바이트 해시에 반영
+                let mut f = tokio::fs::File::open(&part_path).await?;
+                let mut buf = vec![0u8; 64 * 1024];
+                loop {
+                    let r = f.read(&mut buf).await?;
+                    if r == 0 {
+                        break;
+                    }
+                    hasher.update(&buf[..r]);
+                }
+                downloaded = n;
+            }
+            n
+        }
+        Err(_) => 0,
+    };
+
+    let mut req = download_client()?.get(url);
+    if resume_pos > 0 {
+        req = req.header(reqwest::header::RANGE, format!("bytes={}-", resume_pos));
+    }
+    let resp = req
         .send()
         .await
         .with_context(|| format!("다운로드 실패: {}", url))?
         .error_for_status()?;
 
-    let total = resp.content_length();
-    let mut stream = resp.bytes_stream();
-    let mut file = File::create(dst).await?;
-    let mut hasher = Sha256::new();
-    let mut downloaded: u64 = 0;
+    // 서버가 Range 를 무시해서 200 OK 로 전체를 주면 처음부터 다시
+    let server_resumed = resume_pos > 0 && resp.status().as_u16() == 206;
+    if resume_pos > 0 && !server_resumed {
+        tracing::warn!("서버가 Range 헤더를 무시 — 처음부터 다시 받음");
+        hasher = Sha256::new();
+        downloaded = 0;
+    }
 
+    let total_remaining = resp.content_length();
+    let total_full: Option<u64> = if server_resumed {
+        total_remaining.map(|r| r + resume_pos)
+    } else {
+        total_remaining
+    };
+
+    // part 파일 열기 (resume 이면 append, 아니면 create)
+    let mut file = if server_resumed {
+        tokio::fs::OpenOptions::new()
+            .append(true)
+            .open(&part_path)
+            .await?
+    } else {
+        File::create(&part_path).await?
+    };
+
+    let mut stream = resp.bytes_stream();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk?;
         hasher.update(&chunk);
         file.write_all(&chunk).await?;
         downloaded += chunk.len() as u64;
         if let Some(cb) = progress {
-            cb(downloaded, total);
+            cb(downloaded, total_full);
         }
     }
     file.flush().await?;
@@ -114,7 +194,8 @@ pub async fn download_verified(
 
     let got = hex::encode(hasher.finalize());
     if !got.eq_ignore_ascii_case(expected_sha256) {
-        let _ = tokio::fs::remove_file(dst).await;
+        // 해시 실패 — part 파일은 남겨두지 말고 삭제 (다음 시도 시 처음부터)
+        let _ = tokio::fs::remove_file(&part_path).await;
         bail!(
             "sha256 불일치: expected={}, got={}, url={}",
             expected_sha256,
@@ -123,13 +204,7 @@ pub async fn download_verified(
         );
     }
 
-    if total.map_or(false, |t| t != downloaded) {
-        return Err(anyhow!(
-            "다운로드 크기 불일치: expected={:?}, got={}",
-            total,
-            downloaded
-        ));
-    }
-
+    // .part → 최종 경로로 rename
+    tokio::fs::rename(&part_path, dst).await?;
     Ok(())
 }

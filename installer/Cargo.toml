@@ -31,7 +31,11 @@ zip = { version = "0.6", default-features = false, features = ["deflate"] }
 # 해시
 sha2 = "0.10"
 sha1 = "0.10"
+md-5 = "0.10"
 hex = "0.4"
+
+# 바탕화면 바로가기 생성 시 PowerShell -EncodedCommand 용
+base64 = "0.22"
 
 # 에러
 anyhow = "1"

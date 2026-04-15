@@ -10,7 +10,7 @@ use crate::{
     config::{ChannelEntry, CurrentManifest, PackManifest, VersionIndex},
     mrpack, net,
     paths::AppDirs,
-    patcher, prism, state,
+    patcher, prism, shortcut, state,
 };
 
 #[derive(Debug, Clone)]
@@ -28,6 +28,10 @@ pub struct RunOptions {
     pub channel: Channel,
     pub preset: Option<String>,
     pub auto_launch: bool,
+    /// true 면 오프라인 계정 시드, false 면 MS 로그인 필요 (시드 안 함)
+    pub offline_mode: bool,
+    /// 오프라인 모드일 때 사용할 닉네임
+    pub offline_nickname: String,
 }
 
 pub async fn run(
@@ -46,13 +50,13 @@ async fn run_inner(
     tx: &tokio::sync::mpsc::UnboundedSender<Event>,
 ) -> Result<()> {
     macro_rules! status {
-        ($($arg:tt)*) => { let _ = tx.send(Event::Status(format!($($arg)*))); };
+        ($($arg:tt)*) => {{ let _ = tx.send(Event::Status(format!($($arg)*))); }};
     }
     macro_rules! info {
-        ($($arg:tt)*) => { let _ = tx.send(Event::Info(format!($($arg)*))); };
+        ($($arg:tt)*) => {{ let _ = tx.send(Event::Info(format!($($arg)*))); }};
     }
     macro_rules! warn_ {
-        ($($arg:tt)*) => { let _ = tx.send(Event::Warn(format!($($arg)*))); };
+        ($($arg:tt)*) => {{ let _ = tx.send(Event::Warn(format!($($arg)*))); }};
     }
 
     // 1. 로컬 상태 로드
@@ -96,6 +100,14 @@ async fn run_inner(
             );
         }
     }
+
+    // 4.5. mmc-pack.json (Prism 인스턴스 메타) — 매니페스트에서 마크/로더 버전 가져옴
+    prism::write_mmc_pack(
+        dirs,
+        &manifest.minecraft,
+        &manifest.loader.kind,
+        &manifest.loader.version,
+    )?;
 
     // 5. Prism 설치 보장
     status!("Prism Launcher 준비 중");
@@ -179,6 +191,37 @@ async fn run_inner(
     // 11. InstallerState 업데이트
     st.installed_version = Some(entry.version.clone());
     state::save(&dirs.state_file, &st)?;
+
+    // 11.5. 바탕화면 / 시작메뉴 바로가기 (실패해도 전체 성공을 막지 않음)
+    let exe = dirs.prism_root.join("prismlauncher.exe");
+    let args = format!("-l {}", crate::paths::INSTANCE_NAME);
+    match shortcut::create_desktop_shortcut("체리쉬월드", &exe, &args, &dirs.prism_root) {
+        Ok(_) => info!("바탕화면 바로가기 '체리쉬월드' 생성"),
+        Err(e) => warn_!("바탕화면 바로가기 생성 실패: {e:#}"),
+    }
+    match shortcut::create_startmenu_shortcut("체리쉬월드", &exe, &args, &dirs.prism_root) {
+        Ok(_) => info!("시작메뉴 바로가기 '체리쉬월드' 생성"),
+        Err(e) => warn_!("시작메뉴 바로가기 생성 실패: {e:#}"),
+    }
+
+    // 11.6. 기존 Prism 계정 import + 한국어/접근성 스킵 options.txt
+    match prism::import_accounts_if_missing(dirs) {
+        Ok(true) => info!("기존 Prism 계정(accounts.json) 을 가져왔습니다"),
+        Ok(false) => info!("가져올 기존 Prism 계정이 없거나 이미 존재합니다"),
+        Err(e) => warn_!("계정 가져오기 실패: {e:#}"),
+    }
+    if opts.offline_mode {
+        match prism::seed_offline_account_if_missing(dirs, &opts.offline_nickname) {
+            Ok(true) => info!("오프라인 계정 '{}' 생성", opts.offline_nickname),
+            Ok(false) => info!("기존 계정 유지 (accounts.json 있음)"),
+            Err(e) => warn_!("오프라인 계정 생성 실패: {e:#}"),
+        }
+    } else {
+        info!("Microsoft 로그인 모드 — 오프라인 계정 생성 생략 (Prism 창에서 로그인 필요)");
+    }
+    if let Err(e) = prism::write_default_options_if_missing(dirs) {
+        warn_!("options.txt 기본값 작성 실패: {e:#}");
+    }
 
     // 12. Prism 실행
     if opts.auto_launch {

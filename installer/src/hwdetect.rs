@@ -31,8 +31,11 @@ pub fn detect() -> HwSnapshot {
         }
     }
 
-    // GPU — WMI (실패는 조용히)
-    if let Ok((name, vram_mb)) = detect_gpu_wmi() {
+    // GPU — WMI 를 별도 스레드에서 실행 (COM 초기화가 메인 스레드에 영향 주는 것을 방지)
+    // winit/iced는 메인 스레드에서 OleInitialize(STA)를 요구하는데,
+    // wmi::COMLibrary 가 메인 스레드에서 MULTITHREADED 로 먼저 초기화하면 충돌한다.
+    let gpu_result = std::thread::spawn(detect_gpu_wmi).join().ok().and_then(|r| r.ok());
+    if let Some((name, vram_mb)) = gpu_result {
         let n_lower = name.to_ascii_lowercase();
         snap.is_integrated_gpu_guess = n_lower.contains("intel")
             || n_lower.contains("uhd")

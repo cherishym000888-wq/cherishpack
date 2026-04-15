@@ -127,15 +127,140 @@ pub async fn ensure_installed(
     Ok(PrismInstall { launcher_exe })
 }
 
+/// 기존 시스템의 PrismLauncher / PolyMC / MultiMC 설치에서 `accounts.json` 을
+/// 포터블 Prism 루트로 복사. 이미 대상 파일이 있으면 건드리지 않는다.
+/// 데모 모드로 실행되어 Pixelmon 메인메뉴에서 NPE로 크래시 나는 문제 회피.
+pub fn import_accounts_if_missing(dirs: &AppDirs) -> Result<bool> {
+    let dst = dirs.prism_root.join("accounts.json");
+    if dst.exists() {
+        return Ok(false);
+    }
+    let appdata = match std::env::var_os("APPDATA") {
+        Some(v) => std::path::PathBuf::from(v),
+        None => return Ok(false),
+    };
+    let candidates = [
+        appdata.join("PrismLauncher").join("accounts.json"),
+        appdata.join("PolyMC").join("accounts.json"),
+        appdata.join("MultiMC").join("accounts.json"),
+    ];
+    for src in &candidates {
+        if src.exists() {
+            if let Err(e) = std::fs::copy(src, &dst) {
+                tracing::warn!(from = %src.display(), err = %e, "accounts.json 복사 실패");
+                continue;
+            }
+            tracing::info!(from = %src.display(), "기존 Prism 계정 가져오기 성공");
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// accounts.json 이 없으면 오프라인 계정 하나를 심는다.
+/// 데모 모드 진입 → Pixelmon MainMenuModifier NPE 크래시 회피가 목적.
+/// 이미 파일이 있으면 건드리지 않아 기존/MS 계정 보존.
+pub fn seed_offline_account_if_missing(dirs: &AppDirs, nickname: &str) -> Result<bool> {
+    let path = dirs.prism_root.join("accounts.json");
+    if path.exists() {
+        return Ok(false);
+    }
+    std::fs::create_dir_all(&dirs.prism_root)?;
+    // Minecraft 오프라인 UUID 규약: md5("OfflinePlayer:<name>") 에 버전3 bits 세팅
+    let name = if nickname.trim().is_empty() { "Player" } else { nickname };
+    let uuid = offline_uuid(name);
+    let json = serde_json::json!({
+        "formatVersion": 3,
+        "accounts": [{
+            "active": true,
+            "type": "Offline",
+            "profile": {
+                "id": uuid,
+                "name": name,
+                "capes": [],
+                "skin": { "id": "", "url": "", "variant": "CLASSIC" }
+            }
+        }]
+    });
+    std::fs::write(&path, serde_json::to_vec_pretty(&json)?)?;
+    tracing::info!(path = %path.display(), "오프라인 계정 기본값 생성 (Player)");
+    Ok(true)
+}
+
+fn offline_uuid(name: &str) -> String {
+    use md5::{Digest, Md5};
+    let mut h = Md5::new();
+    h.update(format!("OfflinePlayer:{name}").as_bytes());
+    let mut b: [u8; 16] = h.finalize().into();
+    // UUID v3 (name-based, MD5) 규약: version/variant 비트 세팅
+    b[6] = (b[6] & 0x0f) | 0x30;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    hex::encode(b)
+}
+
+/// 첫 실행 시 한국어 + 접근성 온보딩 스킵을 위한 options.txt 기본값.
+/// 이미 파일이 있으면 건드리지 않는다 (사용자 설정 보존).
+pub fn write_default_options_if_missing(dirs: &AppDirs) -> Result<()> {
+    let path = dirs.minecraft_root.join("options.txt");
+    if path.exists() {
+        return Ok(());
+    }
+    if let Some(p) = path.parent() {
+        std::fs::create_dir_all(p)?;
+    }
+    let content = "lang:ko_kr\nonboardAccessibility:false\n";
+    std::fs::write(&path, content)?;
+    tracing::info!(path = %path.display(), "기본 options.txt 생성 (ko_kr, 접근성 스킵)");
+    Ok(())
+}
+
 /// 인스턴스 루트와 minecraft 폴더 준비.
 fn ensure_instance_dirs(dirs: &AppDirs) -> Result<()> {
     std::fs::create_dir_all(&dirs.minecraft_root)?;
     // 기본 instance.cfg — Prism이 인스턴스로 인식하게
     let cfg_path = dirs.instance_root.join("instance.cfg");
     if !cfg_path.exists() {
-        let cfg = "InstanceType=OneSix\nname=CherishPack\niconKey=default\n";
+        let cfg = "InstanceType=OneSix\nname=CherishPack\niconKey=default\nJavaVersion=\nOverrideJavaArgs=false\nOverrideMemory=false\n";
         std::fs::write(&cfg_path, cfg)?;
     }
+    Ok(())
+}
+
+/// Prism 이 인스턴스를 읽기 위해 필요한 `mmc-pack.json` 작성.
+/// 로더 종류에 따라 uid 가 다르다.
+pub fn write_mmc_pack(
+    dirs: &AppDirs,
+    minecraft_version: &str,
+    loader_type: &str,
+    loader_version: &str,
+) -> Result<()> {
+    let loader_uid = match loader_type.to_ascii_lowercase().as_str() {
+        "neoforge" => "net.neoforged",
+        "forge" => "net.minecraftforge",
+        "fabric" => "net.fabricmc.fabric-loader",
+        "quilt" => "org.quiltmc.quilt-loader",
+        other => anyhow::bail!("알 수 없는 로더 타입: {}", other),
+    };
+
+    let json = serde_json::json!({
+        "formatVersion": 1,
+        "components": [
+            {
+                "important": true,
+                "uid": "net.minecraft",
+                "version": minecraft_version
+            },
+            {
+                "uid": loader_uid,
+                "version": loader_version
+            }
+        ]
+    });
+
+    let path = dirs.instance_root.join("mmc-pack.json");
+    std::fs::write(&path, serde_json::to_vec_pretty(&json)?)
+        .with_context(|| format!("mmc-pack.json 쓰기 실패: {}", path.display()))?;
+    tracing::info!(path = %path.display(), "mmc-pack.json 기록");
     Ok(())
 }
 
@@ -222,17 +347,60 @@ fn extract_zip(zip_path: &Path, dst_root: &Path) -> Result<()> {
 }
 
 /// Prism 인스턴스를 실행. 창은 Prism이 직접 띄우고 Minecraft 실행까지 Prism이 담당.
+/// 부모 프로세스(installer)가 끝나도 Prism 이 계속 살아있도록 디태치.
 pub fn launch_instance(dirs: &AppDirs, install: &PrismInstall) -> Result<()> {
-    use std::process::Command;
-
-    // Prism CLI: -l <instance>  (--launch)
-    let status = Command::new(&install.launcher_exe)
-        .arg("-l")
-        .arg(crate::paths::INSTANCE_NAME)
-        .current_dir(&dirs.prism_root)
-        .spawn()
+    spawn_detached(&install.launcher_exe, &dirs.prism_root)
         .with_context(|| format!("Prism 실행 실패: {}", install.launcher_exe.display()))?;
+    tracing::info!("Prism 인스턴스 실행 요청");
+    Ok(())
+}
 
-    tracing::info!(pid = status.id(), "Prism 인스턴스 시작");
+/// Windows 전용: DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP 로 디태치 실행.
+#[cfg(windows)]
+pub fn spawn_detached(exe: &std::path::Path, workdir: &std::path::Path) -> Result<()> {
+    spawn_detached_ex(exe, workdir, true)
+}
+
+#[cfg(windows)]
+pub fn spawn_detached_ex(
+    exe: &std::path::Path,
+    workdir: &std::path::Path,
+    auto_launch: bool,
+) -> Result<()> {
+    use std::os::windows::process::CommandExt;
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+
+    let mut cmd = std::process::Command::new(exe);
+    if auto_launch {
+        cmd.arg("-l").arg(crate::paths::INSTANCE_NAME);
+    }
+    cmd.current_dir(workdir)
+        .creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    let child = cmd.spawn()?;
+    tracing::info!(pid = child.id(), auto_launch, "Prism 디태치 실행");
+    Ok(())
+}
+
+#[cfg(not(windows))]
+pub fn spawn_detached(exe: &std::path::Path, workdir: &std::path::Path) -> Result<()> {
+    spawn_detached_ex(exe, workdir, true)
+}
+
+#[cfg(not(windows))]
+pub fn spawn_detached_ex(
+    exe: &std::path::Path,
+    workdir: &std::path::Path,
+    auto_launch: bool,
+) -> Result<()> {
+    let mut cmd = std::process::Command::new(exe);
+    if auto_launch {
+        cmd.arg("-l").arg(crate::paths::INSTANCE_NAME);
+    }
+    let _ = cmd.current_dir(workdir).spawn()?;
     Ok(())
 }
