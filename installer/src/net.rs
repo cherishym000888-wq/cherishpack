@@ -21,6 +21,46 @@ fn client() -> Result<reqwest::Client> {
         .map_err(Into::into)
 }
 
+pub async fn fetch_bytes(url: &str) -> Result<Vec<u8>> {
+    let resp = client()?
+        .get(url)
+        .send()
+        .await
+        .with_context(|| format!("HTTP GET 실패: {}", url))?
+        .error_for_status()?;
+    Ok(resp.bytes().await?.to_vec())
+}
+
+pub async fn fetch_text(url: &str) -> Result<String> {
+    let resp = client()?
+        .get(url)
+        .send()
+        .await
+        .with_context(|| format!("HTTP GET 실패: {}", url))?
+        .error_for_status()?;
+    Ok(resp.text().await?)
+}
+
+/// 검증 없이 다운로드 (sha256 자산이 없는 경우의 fallback 용도).
+pub async fn download_plain(url: &str, dst: &Path) -> Result<()> {
+    if let Some(parent) = dst.parent() {
+        tokio::fs::create_dir_all(parent).await.ok();
+    }
+    let resp = client()?
+        .get(url)
+        .send()
+        .await
+        .with_context(|| format!("다운로드 실패: {}", url))?
+        .error_for_status()?;
+    let mut stream = resp.bytes_stream();
+    let mut file = File::create(dst).await?;
+    while let Some(chunk) = stream.next().await {
+        file.write_all(&chunk?).await?;
+    }
+    file.flush().await?;
+    Ok(())
+}
+
 pub async fn fetch_json<T: DeserializeOwned>(url: &str) -> Result<T> {
     let resp = client()?
         .get(url)

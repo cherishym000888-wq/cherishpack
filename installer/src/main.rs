@@ -19,11 +19,13 @@ mod hwdetect;
 mod logger;
 mod mrpack;
 mod net;
+mod orchestrator;
 mod paths;
 mod patcher;
 mod preserve;
 mod preset;
 mod prism;
+mod state;
 mod uninstall;
 
 use anyhow::Result;
