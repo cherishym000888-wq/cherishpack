@@ -8,7 +8,7 @@ use std::cmp::Ordering;
 use crate::{
     channel::{self, Channel},
     config::{ChannelEntry, CurrentManifest, PackManifest, VersionIndex},
-    java, mrpack, net,
+    apply_preset, java, mrpack, net,
     paths::AppDirs,
     patcher, prism, shortcut, state,
 };
@@ -246,6 +246,13 @@ async fn run_inner(
     }
     if let Err(e) = prism::write_default_options_if_missing(dirs) {
         warn_!("options.txt 기본값 작성 실패: {e:#}");
+    }
+
+    // 11.7. 프리셋에 따라 리소스팩 + 쉐이더 선택 적용
+    let preset_key = opts.preset.as_deref().unwrap_or("medium");
+    match apply_preset::apply(dirs, preset_key) {
+        Ok(_) => info!("프리셋 '{}' 적용 완료 (리소스팩·쉐이더 설정)", preset_key),
+        Err(e) => warn_!("프리셋 적용 실패: {e:#}"),
     }
 
     // 12. Prism 실행

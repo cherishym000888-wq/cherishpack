@@ -10,6 +10,7 @@
 
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+mod apply_preset;
 mod channel;
 mod config;
 mod crash;

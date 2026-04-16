@@ -1,9 +1,9 @@
 {
   "stable": {
-    "version": "0.3.1",
-    "manifest_url": "https://raw.githubusercontent.com/cherishym000888-wq/cherishpack/main/dist/manifests/0.3.1.json",
+    "version": "0.4.0",
+    "manifest_url": "https://raw.githubusercontent.com/cherishym000888-wq/cherishpack/main/dist/manifests/0.4.0.json",
     "min_required": "0.1.0"
   },
-  "installer_version": "0.1.1",
+  "installer_version": "0.1.2",
   "installer_url": "https://github.com/cherishym000888-wq/cherishpack/releases/latest"
 }
