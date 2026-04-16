@@ -31,10 +31,18 @@ pub fn detect() -> HwSnapshot {
         }
     }
 
-    // GPU — WMI 를 별도 스레드에서 실행 (COM 초기화가 메인 스레드에 영향 주는 것을 방지)
-    // winit/iced는 메인 스레드에서 OleInitialize(STA)를 요구하는데,
-    // wmi::COMLibrary 가 메인 스레드에서 MULTITHREADED 로 먼저 초기화하면 충돌한다.
-    let gpu_result = std::thread::spawn(detect_gpu_wmi).join().ok().and_then(|r| r.ok());
+    // GPU — 별도 스레드에서 실행 (COM 초기화가 메인 스레드의 iced/winit STA 와 충돌 방지).
+    // 1순위: DXGI (DedicatedVideoMemory 는 SIZE_T 64-bit → >4GB 정확)
+    // 2순위: WMI (AdapterRAM 은 DWORD 32-bit → 4GB 에서 잘림)
+    let gpu_result = std::thread::spawn(|| {
+        if let Ok(v) = detect_gpu_dxgi() {
+            return Some(v);
+        }
+        detect_gpu_wmi().ok()
+    })
+    .join()
+    .ok()
+    .flatten();
     if let Some((name, vram_mb)) = gpu_result {
         let n_lower = name.to_ascii_lowercase();
         snap.is_integrated_gpu_guess = n_lower.contains("intel")
@@ -54,6 +62,52 @@ pub fn detect() -> HwSnapshot {
 #[cfg(not(windows))]
 pub fn detect() -> HwSnapshot {
     HwSnapshot::default()
+}
+
+/// DXGI 로 GPU/VRAM 탐지. `DedicatedVideoMemory` 는 SIZE_T(64-bit on x64) 라 >4GB도 정확.
+/// 통합 GPU(Intel HD, AMD Vega 등)는 DedicatedVideoMemory 가 매우 작고 SharedSystemMemory 가 크다.
+#[cfg(windows)]
+fn detect_gpu_dxgi() -> anyhow::Result<(String, u32)> {
+    use windows::Win32::Graphics::Dxgi::{
+        CreateDXGIFactory1, IDXGIAdapter1, IDXGIFactory1, DXGI_ADAPTER_DESC1,
+        DXGI_ADAPTER_FLAG, DXGI_ADAPTER_FLAG_SOFTWARE,
+    };
+    unsafe {
+        let factory: IDXGIFactory1 = CreateDXGIFactory1()?;
+        let mut best: Option<(String, u64)> = None;
+        let mut i = 0u32;
+        loop {
+            let adapter: IDXGIAdapter1 = match factory.EnumAdapters1(i) {
+                Ok(a) => a,
+                Err(_) => break,
+            };
+            i += 1;
+            let desc: DXGI_ADAPTER_DESC1 = match adapter.GetDesc1() {
+                Ok(d) => d,
+                Err(_) => continue,
+            };
+            // 소프트웨어 어댑터(WARP) 제외
+            if DXGI_ADAPTER_FLAG(desc.Flags as i32).0 & DXGI_ADAPTER_FLAG_SOFTWARE.0 != 0 {
+                continue;
+            }
+            // UTF-16 → String (NUL 종료 전까지)
+            let name_len = desc
+                .Description
+                .iter()
+                .position(|&c| c == 0)
+                .unwrap_or(desc.Description.len());
+            let name = String::from_utf16_lossy(&desc.Description[..name_len]);
+            let vram = desc.DedicatedVideoMemory as u64;
+            match &best {
+                None => best = Some((name, vram)),
+                Some((_, bv)) if vram > *bv => best = Some((name, vram)),
+                _ => {}
+            }
+        }
+        let (name, vram_bytes) = best.ok_or_else(|| anyhow::anyhow!("DXGI 어댑터 없음"))?;
+        let vram_mb = (vram_bytes / (1024 * 1024)) as u32;
+        Ok((name, vram_mb))
+    }
 }
 
 #[cfg(windows)]
