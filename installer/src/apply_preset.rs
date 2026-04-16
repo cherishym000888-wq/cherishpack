@@ -18,37 +18,53 @@ pub struct PresetAssets<'a> {
     pub shader_pack: Option<&'a str>,
     /// 리소스팩 파일명(확장자 포함, 상대는 resourcepacks/ 폴더). 왼쪽이 최상위(아래덮음).
     pub resource_packs: Vec<&'a str>,
+    /// 바닐라 렌더거리 (청크)
+    pub render_distance: u32,
+    /// 최대 FPS — 0이면 무제한 (Minecraft 내부: maxFps=260 이 무제한)
+    pub max_fps: u32,
+    /// Distant Horizons LOD 렌더 거리 (청크)
+    pub dh_chunks: u32,
+    /// JVM 힙 메모리 (MB) — Prism instance.cfg 에 기록
+    pub memory_mb: u32,
 }
 
 /// 프리셋 이름("low"/"medium"/"high") → 실제 적용할 파일 세트.
 pub fn preset_assets(preset: &str) -> PresetAssets<'static> {
-    // 순서: 우선순위 **높은 것이 앞**. 내부에서 Minecraft 배열(낮→높) 직렬화 시 역순 처리.
     match preset {
         "high" => PresetAssets {
             shader_pack: Some("ComplementaryUnbound.zip"),
-            // BareBonesXFA(호환 패치) > FreshAnimations(애니메이션) > BareBones(기본 텍스처)
-            resource_packs: vec![
-                "BareBonesXFA.zip",
-                "FreshAnimations.zip",
-                "BareBones.zip",
-            ],
+            resource_packs: vec!["BareBones.zip"],
+            render_distance: 20,
+            max_fps: 260, // 무제한
+            dh_chunks: 256,
+            memory_mb: 8192,
         },
         "medium" => PresetAssets {
             shader_pack: Some("ComplementaryReimagined.zip"),
             resource_packs: vec!["BareBones.zip"],
+            render_distance: 12,
+            max_fps: 120,
+            dh_chunks: 64,
+            memory_mb: 6144,
         },
         _ => PresetAssets {
             shader_pack: None,
             resource_packs: vec!["BareBones.zip"],
+            render_distance: 6,
+            max_fps: 60,
+            dh_chunks: 16,
+            memory_mb: 4096,
         },
     }
 }
 
-/// options.txt 와 iris.properties 에 프리셋을 적용한다.
+/// 프리셋 적용 — options.txt, iris.properties, DH config, instance.cfg 모두 갱신.
 pub fn apply(dirs: &AppDirs, preset: &str) -> Result<()> {
     let assets = preset_assets(preset);
     apply_options_txt(&dirs.minecraft_root, &assets)?;
     apply_iris_properties(&dirs.minecraft_root, &assets)?;
+    apply_dh_config(&dirs.minecraft_root, &assets)?;
+    apply_instance_memory(&dirs.instance_root, &assets)?;
     Ok(())
 }
 
@@ -83,6 +99,9 @@ fn apply_options_txt(mc_root: &Path, assets: &PresetAssets) -> Result<()> {
     if !lines.iter().any(|l| l.starts_with("onboardAccessibility:")) {
         lines.push("onboardAccessibility:false".into());
     }
+    // 프리셋별 렌더거리·FPS 제한 (매번 덮어씀 — 프리셋 변경 시 반영)
+    set_line(&mut lines, "renderDistance", &assets.render_distance.to_string());
+    set_line(&mut lines, "maxFps", &assets.max_fps.to_string());
 
     std::fs::write(&path, lines.join("\n") + "\n")?;
     tracing::info!(path = %path.display(), "options.txt resourcePacks 갱신");
@@ -132,6 +151,85 @@ fn build_resource_packs_line(lines: &[String], assets: &PresetAssets) -> String 
     // 따옴표로 감싸서 배열 포맷으로 직렬화
     let quoted: Vec<String> = kept.iter().map(|e| format!("\"{}\"", e)).collect();
     format!("[{}]", quoted.join(","))
+}
+
+/// Distant Horizons LOD 렌더거리 설정.
+/// `config/distanthorizons.toml` 의 `lodChunkRenderDistanceRadius` 값을 프리셋에 맞춤.
+/// 파일 없으면 신규 생성, 있으면 해당 줄만 교체.
+fn apply_dh_config(mc_root: &std::path::Path, assets: &PresetAssets) -> Result<()> {
+    let path = mc_root.join("config").join("distanthorizons.toml");
+    if let Some(p) = path.parent() {
+        std::fs::create_dir_all(p)?;
+    }
+
+    if !path.exists() {
+        // 최소한의 기본 config — DH 가 첫 실행 시 나머지 기본값 채움
+        let content = format!(
+            "# CherishPack 프리셋에 의해 생성됨\n\
+             [graphics.quality]\n\
+             lodChunkRenderDistanceRadius = {}\n",
+            assets.dh_chunks
+        );
+        std::fs::write(&path, content)?;
+        tracing::info!(path = %path.display(), chunks = assets.dh_chunks, "distanthorizons.toml 생성");
+        return Ok(());
+    }
+
+    let text = std::fs::read_to_string(&path)?;
+    let key = "lodChunkRenderDistanceRadius";
+    let replacement = format!("{key} = {}", assets.dh_chunks);
+
+    let new_text = if text.contains(key) {
+        // 기존 줄 교체 (line 단위)
+        let mut out = String::new();
+        for line in text.lines() {
+            if line.trim_start().starts_with(key) {
+                out.push_str(&replacement);
+            } else {
+                out.push_str(line);
+            }
+            out.push('\n');
+        }
+        out
+    } else {
+        // 섹션이 있으면 그 아래에, 없으면 끝에 추가
+        let mut out = text.clone();
+        if !out.ends_with('\n') {
+            out.push('\n');
+        }
+        if out.contains("[graphics.quality]") {
+            out = out.replace(
+                "[graphics.quality]",
+                &format!("[graphics.quality]\n{replacement}"),
+            );
+        } else {
+            out.push_str(&format!("\n[graphics.quality]\n{replacement}\n"));
+        }
+        out
+    };
+
+    std::fs::write(&path, new_text)?;
+    tracing::info!(path = %path.display(), chunks = assets.dh_chunks, "distanthorizons.toml 갱신");
+    Ok(())
+}
+
+/// Prism 인스턴스의 RAM 할당(`MinMemAlloc`/`MaxMemAlloc`) 설정.
+fn apply_instance_memory(instance_root: &std::path::Path, assets: &PresetAssets) -> Result<()> {
+    let cfg_path = instance_root.join("instance.cfg");
+    let content = if cfg_path.exists() {
+        std::fs::read_to_string(&cfg_path)?
+    } else {
+        String::new()
+    };
+    let mut lines: Vec<String> = content.lines().map(String::from).collect();
+
+    set_line(&mut lines, "OverrideMemory", "true");
+    set_line(&mut lines, "MinMemAlloc", &assets.memory_mb.to_string());
+    set_line(&mut lines, "MaxMemAlloc", &assets.memory_mb.to_string());
+
+    std::fs::write(&cfg_path, lines.join("\n") + "\n")?;
+    tracing::info!(ram = assets.memory_mb, "instance.cfg RAM 설정");
+    Ok(())
 }
 
 /// 특정 key 로 시작하는 줄이 있으면 교체, 없으면 끝에 추가.
