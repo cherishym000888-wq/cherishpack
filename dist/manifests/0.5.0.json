@@ -1,0 +1,31 @@
+{
+  "pack_version": "0.5.0",
+  "released_at": "2026-04-17T00:00:00Z",
+  "minecraft": "1.21.1",
+  "loader": {
+    "type": "neoforge",
+    "version": "21.1.220"
+  },
+  "mrpack_url": "https://github.com/cherishym000888-wq/cherishpack/releases/download/v0.5.0/cherishpack-0.5.0.mrpack",
+  "mrpack_sha256": "af402048a1bb5b0bce05604df2e0f3bb9f5d0384b1dbf314e550afdfc5c67352",
+  "preserve": [
+    "options.txt",
+    "optionsof.txt",
+    "optionsshaders.txt",
+    "servers.dat",
+    "servers.dat_old",
+    "saves/**",
+    "screenshots/**",
+    "logs/**",
+    "crash-reports/**",
+    "resourcepacks/user/**",
+    "config/iris.properties"
+  ],
+  "overwrite_policy": {},
+  "hw_profiles": {
+    "low":    { "shaders": null, "resourcepack": "BareBones.zip", "ram_mb": 4096 },
+    "medium": { "shaders": "ComplementaryReimagined.zip", "resourcepack": "BareBones.zip", "ram_mb": 6144 },
+    "high":   { "shaders": "ComplementaryUnbound.zip", "resourcepack": "BareBones.zip,FreshAnimations.zip,BareBonesXFA.zip", "ram_mb": 8192 }
+  },
+  "min_installer_version": "0.1.4"
+}

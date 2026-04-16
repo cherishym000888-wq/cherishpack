@@ -22,18 +22,24 @@ pub struct PresetAssets<'a> {
 
 /// 프리셋 이름("low"/"medium"/"high") → 실제 적용할 파일 세트.
 pub fn preset_assets(preset: &str) -> PresetAssets<'static> {
+    // 순서: 우선순위 **높은 것이 앞**. 내부에서 Minecraft 배열(낮→높) 직렬화 시 역순 처리.
     match preset {
         "high" => PresetAssets {
             shader_pack: Some("ComplementaryUnbound.zip"),
-            resource_packs: vec!["FreshAnimations.zip", "SuperCute.zip"],
+            // BareBonesXFA(호환 패치) > FreshAnimations(애니메이션) > BareBones(기본 텍스처)
+            resource_packs: vec![
+                "BareBonesXFA.zip",
+                "FreshAnimations.zip",
+                "BareBones.zip",
+            ],
         },
         "medium" => PresetAssets {
             shader_pack: Some("ComplementaryReimagined.zip"),
-            resource_packs: vec!["SuperCute.zip"],
+            resource_packs: vec!["BareBones.zip"],
         },
         _ => PresetAssets {
             shader_pack: None,
-            resource_packs: vec!["SuperCute.zip"],
+            resource_packs: vec!["BareBones.zip"],
         },
     }
 }
