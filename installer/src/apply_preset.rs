@@ -9,7 +9,6 @@
 //!      이 함수는 **최초 적용** 또는 **빈 값일 때만** 설정을 심는다.
 
 use anyhow::Result;
-use std::collections::HashMap;
 use std::path::Path;
 
 use crate::paths::AppDirs;
@@ -47,36 +46,97 @@ pub fn apply(dirs: &AppDirs, preset: &str) -> Result<()> {
     Ok(())
 }
 
-/// options.txt 의 resourcePacks / incompatibleResourcePacks 만 덮어쓴다.
-/// 다른 설정은 그대로 보존.
+/// options.txt 의 resourcePacks 항목만 정교하게 수정한다.
+/// 전략:
+///   1. 기존 resourcePacks 배열에서 **file/ 로 시작하는 항목은 제거** (구 프리셋 잔재 청소)
+///   2. 그 외 항목(vanilla, mod_resources, moonlight:merged_pack 등)은 **보존**
+///   3. 내 프리셋의 file/ 항목들을 **가장 뒤**에 추가 (우선순위 최상)
+///   4. FreshAnimations 같은 mob 애니메이션 팩을 마지막에 두면 SuperCute 위에서 덮어씀
+///
+/// 파일 전체는 **원본 순서·형식 유지**하며 해당 한 줄만 교체.
 fn apply_options_txt(mc_root: &Path, assets: &PresetAssets) -> Result<()> {
     let path = mc_root.join("options.txt");
-    let mut map = parse_options(&path)?;
 
-    // 예상 포맷: `resourcePacks:["vanilla","file/pack1.zip"]`
-    // 체인 순서: 왼→오른 = 상위→하위 (Minecraft 규칙과는 반대지만 file/pack은 최하위)
-    // 실제 Minecraft는 array의 마지막 항목이 최상위 적용이므로 우선순위 역순으로 넣는다.
-    let mut entries: Vec<String> = vec!["\"vanilla\"".to_string()];
-    // resource_packs는 왼쪽이 최상위이므로 역순으로 append
-    for rp in assets.resource_packs.iter().rev() {
-        entries.push(format!("\"file/{}\"", rp));
+    let mut lines: Vec<String> = if path.exists() {
+        std::fs::read_to_string(&path)?.lines().map(String::from).collect()
+    } else {
+        Vec::new()
+    };
+
+    let new_rp_line = build_resource_packs_line(&lines, assets);
+    set_line(&mut lines, "resourcePacks", &new_rp_line);
+
+    // incompatibleResourcePacks 가 없으면 빈 배열로 초기화
+    if !lines.iter().any(|l| l.starts_with("incompatibleResourcePacks:")) {
+        lines.push("incompatibleResourcePacks:[]".into());
     }
-    let rp_value = format!("[{}]", entries.join(","));
-    map.insert("resourcePacks".to_string(), rp_value);
-
-    // incompatibleResourcePacks 비움 (Minecraft가 자동 관리)
-    if !map.contains_key("incompatibleResourcePacks") {
-        map.insert("incompatibleResourcePacks".to_string(), "[]".into());
+    // lang / onboardAccessibility 없으면 추가 (있으면 사용자 선택 존중)
+    if !lines.iter().any(|l| l.starts_with("lang:")) {
+        lines.push("lang:ko_kr".into());
+    }
+    if !lines.iter().any(|l| l.starts_with("onboardAccessibility:")) {
+        lines.push("onboardAccessibility:false".into());
     }
 
-    // 한국어, 접근성 스킵 (기본값)
-    map.entry("lang".to_string()).or_insert_with(|| "ko_kr".into());
-    map.entry("onboardAccessibility".to_string())
-        .or_insert_with(|| "false".into());
-
-    write_options(&path, &map)?;
-    tracing::info!(path = %path.display(), "options.txt 갱신 (resourcePacks)");
+    std::fs::write(&path, lines.join("\n") + "\n")?;
+    tracing::info!(path = %path.display(), "options.txt resourcePacks 갱신");
     Ok(())
+}
+
+/// 기존 resourcePacks 줄을 파싱해서 file/ 이 아닌 엔트리만 보존하고,
+/// 프리셋의 새 file/ 엔트리를 뒤에 추가.
+fn build_resource_packs_line(lines: &[String], assets: &PresetAssets) -> String {
+    // 기존 줄 찾기
+    let existing_value = lines
+        .iter()
+        .find_map(|l| l.strip_prefix("resourcePacks:"))
+        .unwrap_or("[\"vanilla\"]");
+
+    // 배열 내부 파싱 — 단순 분리 (JSON 파서 쓰기엔 과함)
+    let inner = existing_value
+        .trim()
+        .trim_start_matches('[')
+        .trim_end_matches(']');
+    let existing_entries: Vec<String> = if inner.trim().is_empty() {
+        Vec::new()
+    } else {
+        inner
+            .split(',')
+            .map(|s| s.trim().trim_matches('"').to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    };
+
+    // file/ 로 시작하는 엔트리 제거
+    let mut kept: Vec<String> = existing_entries
+        .into_iter()
+        .filter(|e| !e.starts_with("file/"))
+        .collect();
+    // vanilla 가 없으면 맨 앞에 추가
+    if !kept.iter().any(|e| e == "vanilla") {
+        kept.insert(0, "vanilla".to_string());
+    }
+
+    // 프리셋 리소스팩 추가 — resource_packs는 왼쪽이 우선순위 최상이므로,
+    // Minecraft 배열 마지막 = 최상위 라서 역순으로 append
+    for rp in assets.resource_packs.iter().rev() {
+        kept.push(format!("file/{}", rp));
+    }
+
+    // 따옴표로 감싸서 배열 포맷으로 직렬화
+    let quoted: Vec<String> = kept.iter().map(|e| format!("\"{}\"", e)).collect();
+    format!("[{}]", quoted.join(","))
+}
+
+/// 특정 key 로 시작하는 줄이 있으면 교체, 없으면 끝에 추가.
+fn set_line(lines: &mut Vec<String>, key: &str, value: &str) {
+    let prefix = format!("{key}:");
+    let new_line = format!("{key}:{value}");
+    if let Some(pos) = lines.iter().position(|l| l.starts_with(&prefix)) {
+        lines[pos] = new_line;
+    } else {
+        lines.push(new_line);
+    }
 }
 
 /// `config/iris.properties` 에 `shaderPack` 기록. 없으면 새로 생성.
@@ -124,29 +184,3 @@ fn set_or_insert(lines: &mut Vec<String>, key: &str, full_line: &str) {
     }
 }
 
-/// options.txt 포맷: `key:value` (한 줄에 하나). 순서 보존 위해 Vec 으로 저장.
-/// 하지만 단순 구현: HashMap + 원본 순서는 포기. Minecraft 는 순서 독립적으로 파싱함.
-fn parse_options(path: &Path) -> Result<HashMap<String, String>> {
-    let mut map = HashMap::new();
-    if !path.exists() {
-        return Ok(map);
-    }
-    let text = std::fs::read_to_string(path)?;
-    for line in text.lines() {
-        if let Some((k, v)) = line.split_once(':') {
-            map.insert(k.to_string(), v.to_string());
-        }
-    }
-    Ok(map)
-}
-
-fn write_options(path: &Path, map: &HashMap<String, String>) -> Result<()> {
-    let mut keys: Vec<&String> = map.keys().collect();
-    keys.sort();
-    let body: String = keys
-        .iter()
-        .map(|k| format!("{}:{}\n", k, map[*k]))
-        .collect();
-    std::fs::write(path, body)?;
-    Ok(())
-}
