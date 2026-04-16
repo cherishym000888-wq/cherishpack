@@ -16,6 +16,7 @@ mod crash;
 mod gui;
 mod hash;
 mod hwdetect;
+mod java;
 mod logger;
 mod mrpack;
 mod net;

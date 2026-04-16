@@ -14,6 +14,12 @@ pub struct VersionIndex {
     pub stable: ChannelEntry,
     #[serde(default)]
     pub beta: Option<ChannelEntry>,
+    /// 최신 설치 프로그램 버전 (GUI 업데이트 알림용)
+    #[serde(default)]
+    pub installer_version: Option<String>,
+    /// 설치 프로그램 다운로드 URL
+    #[serde(default)]
+    pub installer_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

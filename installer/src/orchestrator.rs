@@ -8,7 +8,7 @@ use std::cmp::Ordering;
 use crate::{
     channel::{self, Channel},
     config::{ChannelEntry, CurrentManifest, PackManifest, VersionIndex},
-    mrpack, net,
+    java, mrpack, net,
     paths::AppDirs,
     patcher, prism, shortcut, state,
 };
@@ -124,6 +124,31 @@ async fn run_inner(
     )
     .await
     .context("Prism 설치 실패")?;
+
+    // 5.5. Java 21 보장
+    status!("Java 21 확인 중");
+    let tx_j = tx.clone();
+    let java_result = java::ensure_java(
+        dirs,
+        Some(&move |d, t, label| {
+            let _ = tx_j.send(Event::Progress {
+                done: d,
+                total: t,
+                label: label.to_string(),
+            });
+        }),
+    )
+    .await
+    .context("Java 설치 실패")?;
+    if java_result.installed_now {
+        info!("Java 21 새로 설치됨: {}", java_result.javaw.display());
+    } else {
+        info!("Java 21 확인: {}", java_result.javaw.display());
+    }
+    // Prism 인스턴스에 Java 경로 기록
+    if let Err(e) = java::set_instance_java(dirs, &java_result.javaw) {
+        warn_!("instance.cfg Java 경로 설정 실패: {e:#}");
+    }
 
     // 6. .mrpack 다운로드 + 검증
     status!("모드팩 다운로드 중 ({} )", entry.version);

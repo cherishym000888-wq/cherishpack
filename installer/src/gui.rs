@@ -12,12 +12,29 @@ use iced::{
 use std::sync::{Arc, Mutex};
 
 use crate::{
-    channel::Channel,
+    channel::{self, Channel},
+    config::VersionIndex,
     hwdetect::{self, HwSnapshot},
+    net,
     orchestrator::{self, Event as OrcEvent, RunOptions},
     paths::AppDirs,
     preset::{self, Preset},
+    state,
 };
+
+/// 비동기 업데이트 체크 — 실패하면 None (알림 안 함).
+async fn check_for_update() -> Option<String> {
+    let idx: VersionIndex = net::fetch_json(channel::VERSION_INDEX_URL).await.ok()?;
+    let latest = idx.installer_version.as_deref()?;
+    let current = env!("CARGO_PKG_VERSION");
+    if state::compare(current, latest) == std::cmp::Ordering::Less {
+        Some(format!(
+            "설치 프로그램 업데이트 가능: v{current} -> v{latest}"
+        ))
+    } else {
+        None
+    }
+}
 
 pub fn run(dirs: AppDirs) -> Result<()> {
     App::run(Settings {
@@ -49,6 +66,8 @@ struct App {
     chosen_preset: Preset,
     auth_mode: AuthMode,
     nickname: String,
+    /// 업데이트 알림 메시지 (None이면 최신)
+    update_notice: Option<String>,
     progress_done: u64,
     progress_total: Option<u64>,
     progress_label: String,
@@ -76,6 +95,7 @@ pub enum Msg {
     Launch,
     Close,
     Orc(OrcEvent),
+    UpdateCheck(Option<String>),
 }
 
 impl Application for App {
@@ -95,6 +115,7 @@ impl Application for App {
                 chosen_preset,
                 auth_mode: AuthMode::Offline,
                 nickname: "Player".to_string(),
+                update_notice: None,
                 progress_done: 0,
                 progress_total: None,
                 progress_label: String::new(),
@@ -104,7 +125,7 @@ impl Application for App {
                 log_lines: Vec::new(),
                 rx: Arc::new(Mutex::new(None)),
             },
-            Command::none(),
+            Command::perform(check_for_update(), Msg::UpdateCheck),
         )
     }
 
@@ -165,6 +186,10 @@ impl Application for App {
                 iced::window::close(iced::window::Id::MAIN)
             }
             Msg::Close => iced::window::close(iced::window::Id::MAIN),
+            Msg::UpdateCheck(notice) => {
+                self.update_notice = notice;
+                Command::none()
+            }
             Msg::Orc(ev) => {
                 self.apply_event(ev);
                 Command::none()
@@ -282,6 +307,14 @@ impl App {
         let content = column![
             text("CherishPack").size(32),
             text("마인크래프트 NeoForge 1.21.1 모드팩").size(13),
+            {
+                let e: Element<'_, Msg> = if let Some(notice) = &self.update_notice {
+                    text(notice.as_str()).size(12).into()
+                } else {
+                    Space::with_height(0).into()
+                };
+                e
+            },
             Space::with_height(10),
             text(format!("RAM: {:.1} GB  |  GPU: {}  |  VRAM: {}", ram_gb, gpu, vram))
                 .size(12),
