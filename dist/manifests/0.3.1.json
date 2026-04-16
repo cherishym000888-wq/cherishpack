@@ -1,0 +1,30 @@
+{
+  "pack_version": "0.3.1",
+  "released_at": "2026-04-17T00:00:00Z",
+  "minecraft": "1.21.1",
+  "loader": {
+    "type": "neoforge",
+    "version": "21.1.220"
+  },
+  "mrpack_url": "https://github.com/cherishym000888-wq/cherishpack/releases/download/v0.3.1/cherishpack-0.3.1.mrpack",
+  "mrpack_sha256": "2f1e5df6d621942bd98a3c53b3ee90c0ab0e93db8b4fe323840f35458ed1fbb2",
+  "preserve": [
+    "options.txt",
+    "optionsof.txt",
+    "optionsshaders.txt",
+    "servers.dat",
+    "servers.dat_old",
+    "saves/**",
+    "screenshots/**",
+    "logs/**",
+    "crash-reports/**",
+    "resourcepacks/user/**"
+  ],
+  "overwrite_policy": {},
+  "hw_profiles": {
+    "low":    { "shaders": null, "resourcepack": null, "ram_mb": 4096 },
+    "medium": { "shaders": null, "resourcepack": null, "ram_mb": 6144 },
+    "high":   { "shaders": null, "resourcepack": null, "ram_mb": 8192 }
+  },
+  "min_installer_version": "0.1.0"
+}
