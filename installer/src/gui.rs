@@ -376,8 +376,8 @@ impl App {
             OrcEvent::SubStep { idx, total, label }  => { self.substep_idx = idx; self.substep_total = total; self.substep_label = label; }
             OrcEvent::Info(s)                        => { if !s.is_empty() { self.push_log(format!("    {s}")); } }
             OrcEvent::Warn(s)                        => { self.push_log(format!("[!] {s}")); }
-            OrcEvent::Done { launched }              => { self.push_log("[✓] 완료".into()); self.screen = Screen::Done { launched }; }
-            OrcEvent::Error(e)                       => { self.push_log(format!("[✗] {e}")); self.screen = Screen::Error(e); }
+            OrcEvent::Done { launched }              => { self.push_log("[v] 완료".into()); self.screen = Screen::Done { launched }; }
+            OrcEvent::Error(e)                       => { self.push_log(format!("[x] {e}")); self.screen = Screen::Error(e); }
         }
     }
 
@@ -601,7 +601,7 @@ impl App {
 
     fn view_done(&self, _launched: bool) -> Element<'_, Msg> {
         let content = column![
-            text("✓  설치 완료").size(30).style(SUCCESS),
+            text("설치 완료").size(30).style(SUCCESS),
             Space::with_height(4),
             container(
                 column![
@@ -647,7 +647,7 @@ impl App {
 
     fn view_error(&self, err: &str) -> Element<'_, Msg> {
         let content = column![
-            text("✗  설치 실패").size(26).style(Color { r: 1.0, g: 0.4, b: 0.4, a: 1.0 }),
+            text("설치 실패").size(26).style(Color { r: 1.0, g: 0.4, b: 0.4, a: 1.0 }),
             Space::with_height(4),
             container(
                 scrollable(
