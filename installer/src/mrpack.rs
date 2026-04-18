@@ -263,7 +263,9 @@ fn extract_overrides(
 ) -> Result<()> {
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i)?;
-        let name = entry.name().to_string();
+        // Windows ZipFile::CreateFromDirectory 는 역슬래시로 엔트리를 만들 수 있으므로
+        // 정규화 후 prefix 비교.
+        let name = entry.name().to_string().replace('\\', "/");
         if !name.starts_with(prefix) {
             continue;
         }
