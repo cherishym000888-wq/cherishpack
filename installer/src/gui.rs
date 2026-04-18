@@ -290,7 +290,7 @@ impl Application for App {
         )
     }
 
-    fn title(&self) -> String { "CherishPack 설치 프로그램".into() }
+    fn title(&self) -> String { "CherishWorld".into() }
 
     fn update(&mut self, msg: Msg) -> Command<Msg> {
         match msg {
@@ -407,7 +407,7 @@ impl App {
             .into();
 
             let b = button(inner)
-                .width(Length::Fixed(120.0))
+                .width(Length::Fill)
                 .padding([10, 8])
                 .on_press(Msg::PickPreset(p));
 
@@ -501,8 +501,8 @@ impl App {
                     mk_preset_btn("MEDIUM", "Photon",       Preset::Medium),
                     mk_preset_btn("HIGH",   "Photon HD",    Preset::High),
                     mk_preset_btn("HIGH++", "Reth. Voxels", Preset::HighPlus),
-                ].spacing(8),
-            ].spacing(8).align_items(Alignment::Center),
+                ].spacing(8).width(Length::Fill),
+            ].spacing(8).align_items(Alignment::Center).width(Length::Fill),
 
             auth_section,
 
@@ -606,7 +606,6 @@ impl App {
             container(
                 column![
                     text("· 바탕화면과 시작메뉴에 '체리쉬월드' 바로가기가 생성되었습니다.").size(12),
-                    text("· 오프라인 계정이 자동 설정되어 바로 플레이 가능합니다.").size(12),
                 ].spacing(6)
             )
             .padding([14, 18])
