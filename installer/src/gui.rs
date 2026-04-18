@@ -487,7 +487,7 @@ impl App {
         // ── 전체 레이아웃 ──
         let content = column![
             column![
-                text("🌸  CherishPack").size(36).style(CHERRY),
+                text("CHERISH").size(36).style(CHERRY),
                 text("Minecraft NeoForge 1.21.1 모드팩").size(12).style(TEXT_MUTED),
             ].spacing(2).align_items(Alignment::Center),
 
