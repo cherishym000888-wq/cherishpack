@@ -328,6 +328,7 @@ impl App {
                 preset_btn("LOW", Preset::Low),
                 preset_btn("MEDIUM", Preset::Medium),
                 preset_btn("HIGH", Preset::High),
+                preset_btn("HIGH++", Preset::HighPlus),
             ]
             .spacing(10),
             Space::with_height(10),

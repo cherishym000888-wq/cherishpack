@@ -8,6 +8,8 @@
 //!   - 그 외                   → medium
 //!
 //! 자동 선택이 아니라 **추천**이다. 사용자가 UI에서 최종 변경 가능.
+//! HighPlus 는 RVX(콜러드 라이팅 RT-lite) 쉐이더를 쓰는 최고사양 옵션이라
+//! 자동 추천하지 않고 사용자가 직접 선택해야 한다.
 
 use crate::hwdetect::HwSnapshot;
 
@@ -16,6 +18,7 @@ pub enum Preset {
     Low,
     Medium,
     High,
+    HighPlus,
 }
 
 impl Preset {
@@ -24,6 +27,7 @@ impl Preset {
             Preset::Low => "low",
             Preset::Medium => "medium",
             Preset::High => "high",
+            Preset::HighPlus => "high_plus",
         }
     }
 }

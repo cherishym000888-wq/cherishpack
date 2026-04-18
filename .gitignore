@@ -26,3 +26,8 @@ desktop.ini
 
 # Logs
 *.log
+
+# Local-only test/preview
+/preview_packs/
+/_*.ps1
+/_*.json
