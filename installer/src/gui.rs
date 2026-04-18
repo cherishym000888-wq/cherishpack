@@ -477,7 +477,7 @@ impl App {
                             .padding([7, 10]),
                     ].spacing(10).align_items(Alignment::Center).into()
                 } else {
-                    text("설치 후 Prism 창에서 Microsoft 계정을 추가해주세요.")
+                    text("설치 후 첫실행시 Microsoft 계정을 추가 할 수 있습니다.")
                         .size(11).style(TEXT_MUTED).into()
                 };
                 e
@@ -571,7 +571,7 @@ impl App {
                 scrollable(
                     container(
                         text(log_text).size(11)
-                            .font(iced::Font { family: iced::font::Family::Monospace, ..Default::default() })
+                            .font(iced::Font::with_name("Malgun Gothic"))
                             .style(TEXT_MUTED)
                     )
                     .padding(12)
@@ -607,7 +607,6 @@ impl App {
                 column![
                     text("· 바탕화면과 시작메뉴에 '체리쉬월드' 바로가기가 생성되었습니다.").size(12),
                     text("· 오프라인 계정이 자동 설정되어 바로 플레이 가능합니다.").size(12),
-                    text("  닉네임 변경: Prism 우측 상단 계정 메뉴").size(11).style(TEXT_MUTED),
                 ].spacing(6)
             )
             .padding([14, 18])
@@ -615,7 +614,7 @@ impl App {
 
             Space::with_height(8),
             row![
-                button(text("  Prism 실행  ").size(14))
+                button(text("  실행  ").size(14))
                     .on_press(Msg::Launch)
                     .style(iced::theme::Button::Custom(Box::new(BtnPrimary)))
                     .padding([10, 22]),
@@ -653,7 +652,7 @@ impl App {
                 scrollable(
                     container(
                         text(err).size(11)
-                            .font(iced::Font { family: iced::font::Family::Monospace, ..Default::default() })
+                            .font(iced::Font::with_name("Malgun Gothic"))
                             .style(TEXT_MUTED)
                     )
                     .padding(12)
