@@ -31,8 +31,7 @@ pub struct PresetAssets<'a> {
 /// 프리셋 이름("low"/"medium"/"high") → 실제 적용할 파일 세트.
 pub fn preset_assets(preset: &str) -> PresetAssets<'static> {
     match preset {
-        // 최고사양 — Rethinking Voxels(RT-lite) + Faithful 64x + DH.
-        // FPS 120 으로 제한 (RVX 는 무거워 드롭 부드럽게).
+        // 최고사양 — Rethinking Voxels + Faithful 64x
         "high_plus" => PresetAssets {
             shader_pack: Some("RethinkingVoxels.zip"),
             resource_packs: vec!["Faithful64x.zip"],
@@ -41,18 +40,18 @@ pub fn preset_assets(preset: &str) -> PresetAssets<'static> {
             dh_chunks: 96,
             memory_mb: 12288,
         },
-        // 고사양 — Photon + Faithful 64x
+        // 고사양 — Complementary Unbound + Faithful 64x
         "high" => PresetAssets {
-            shader_pack: Some("Photon.zip"),
+            shader_pack: Some("ComplementaryUnbound.zip"),
             resource_packs: vec!["Faithful64x.zip"],
             render_distance: 16,
             max_fps: 144,
             dh_chunks: 128,
             memory_mb: 8192,
         },
-        // 중사양 — Photon + Faithful 64x (HIGH 대비 거리/RAM만 축소)
+        // 중사양 — Complementary Reimagined + Faithful 64x
         "medium" => PresetAssets {
-            shader_pack: Some("Photon.zip"),
+            shader_pack: Some("ComplementaryReimagined.zip"),
             resource_packs: vec!["Faithful64x.zip"],
             render_distance: 12,
             max_fps: 120,

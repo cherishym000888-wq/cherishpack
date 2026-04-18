@@ -7,7 +7,7 @@
     "version": "21.1.220"
   },
   "mrpack_url": "https://github.com/cherishym000888-wq/cherishpack/releases/download/v0.6.0/cherishpack-0.6.0.mrpack",
-  "mrpack_sha256": "3a1ae2a90aee4f48f1240bc3e1c5700fbd131273ad9375b2f72f9433a66204fa",
+  "mrpack_sha256": "8d8ab74e76bd445ad86f2fdf0ff666aeca94dec07e8be59069d71361797eac97",
   "preserve": [
     "options.txt",
     "optionsof.txt",
@@ -24,10 +24,10 @@
   ],
   "overwrite_policy": {},
   "hw_profiles": {
-    "low":        { "shaders": null,                        "resourcepack": "BareBones.zip",   "ram_mb": 4096  },
-    "medium":     { "shaders": "Photon.zip",                "resourcepack": "Faithful64x.zip", "ram_mb": 6144  },
-    "high":       { "shaders": "Photon.zip",                "resourcepack": "Faithful64x.zip", "ram_mb": 8192  },
-    "high_plus":  { "shaders": "RethinkingVoxels.zip",      "resourcepack": "Faithful64x.zip", "ram_mb": 12288 }
+    "low":        { "shaders": null,                              "resourcepack": "BareBones.zip",   "ram_mb": 4096  },
+    "medium":     { "shaders": "ComplementaryReimagined.zip",   "resourcepack": "Faithful64x.zip", "ram_mb": 6144  },
+    "high":       { "shaders": "ComplementaryUnbound.zip",      "resourcepack": "Faithful64x.zip", "ram_mb": 8192  },
+    "high_plus":  { "shaders": "RethinkingVoxels.zip",          "resourcepack": "Faithful64x.zip", "ram_mb": 12288 }
   },
-  "min_installer_version": "0.1.6"
+  "min_installer_version": "0.1.7"
 }

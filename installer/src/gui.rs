@@ -497,10 +497,10 @@ impl App {
             column![
                 text("그래픽 품질").size(12).style(TEXT_MUTED),
                 row![
-                    mk_preset_btn("LOW",    "쉐이더 OFF",   Preset::Low),
-                    mk_preset_btn("MEDIUM", "Photon",       Preset::Medium),
-                    mk_preset_btn("HIGH",   "Photon HD",    Preset::High),
-                    mk_preset_btn("HIGH++", "Reth. Voxels", Preset::HighPlus),
+                    mk_preset_btn("LOW",    "쉐이더 OFF",    Preset::Low),
+                    mk_preset_btn("MEDIUM", "C. Reimagined", Preset::Medium),
+                    mk_preset_btn("HIGH",   "C. Unbound",    Preset::High),
+                    mk_preset_btn("HIGH++", "Reth. Voxels",  Preset::HighPlus),
                 ].spacing(8).width(Length::Fill),
             ].spacing(8).align_items(Alignment::Center).width(Length::Fill),
 
