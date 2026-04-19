@@ -34,7 +34,7 @@ pub fn preset_assets(preset: &str) -> PresetAssets<'static> {
         // 최고사양 — Rethinking Voxels + Faithful 64x
         "high_plus" => PresetAssets {
             shader_pack: Some("RethinkingVoxels.zip"),
-            resource_packs: vec!["Faithful64x.zip"],
+            resource_packs: vec!["cherishpack-ko.zip", "Faithful64x.zip"],
             render_distance: 12,
             max_fps: 120,
             dh_chunks: 96,
@@ -43,7 +43,7 @@ pub fn preset_assets(preset: &str) -> PresetAssets<'static> {
         // 고사양 — Complementary Unbound + Faithful 64x
         "high" => PresetAssets {
             shader_pack: Some("ComplementaryUnbound.zip"),
-            resource_packs: vec!["Faithful64x.zip"],
+            resource_packs: vec!["cherishpack-ko.zip", "Faithful64x.zip"],
             render_distance: 16,
             max_fps: 144,
             dh_chunks: 128,
@@ -52,7 +52,7 @@ pub fn preset_assets(preset: &str) -> PresetAssets<'static> {
         // 중사양 — Complementary Reimagined + Faithful 64x
         "medium" => PresetAssets {
             shader_pack: Some("ComplementaryReimagined.zip"),
-            resource_packs: vec!["Faithful64x.zip"],
+            resource_packs: vec!["cherishpack-ko.zip", "Faithful64x.zip"],
             render_distance: 12,
             max_fps: 120,
             dh_chunks: 64,
@@ -61,7 +61,7 @@ pub fn preset_assets(preset: &str) -> PresetAssets<'static> {
         // 저사양 — BareBones, 쉐이더 OFF
         _ => PresetAssets {
             shader_pack: None,
-            resource_packs: vec!["BareBones.zip"],
+            resource_packs: vec!["cherishpack-ko.zip", "BareBones.zip"],
             render_distance: 6,
             max_fps: 60,
             dh_chunks: 16,
