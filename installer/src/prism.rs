@@ -258,6 +258,8 @@ pub fn write_mmc_pack(
     });
 
     let path = dirs.instance_root.join("mmc-pack.json");
+    std::fs::create_dir_all(&dirs.instance_root)
+        .with_context(|| format!("인스턴스 디렉토리 생성 실패: {}", dirs.instance_root.display()))?;
     std::fs::write(&path, serde_json::to_vec_pretty(&json)?)
         .with_context(|| format!("mmc-pack.json 쓰기 실패: {}", path.display()))?;
     tracing::info!(path = %path.display(), "mmc-pack.json 기록");
