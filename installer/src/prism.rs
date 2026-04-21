@@ -183,30 +183,21 @@ pub fn seed_offline_account_if_missing(dirs: &AppDirs, nickname: &str) -> Result
     std::fs::create_dir_all(&dirs.prism_root)?;
     let name = if nickname.trim().is_empty() { "Player" } else { nickname };
     let uuid = offline_uuid(name);
+    // Offline 전용: Prism 의 ownsMinecraft() 가 type != Offline 하드코드 체크라
+    // dummy MSA 를 넣어도 LaunchController::decideLaunchMode 의 forced refresh 로 'Client ID changed'
+    // 대화상자가 뜬다. 대안으로 Offline 만 시드하고 "Play Demo?" 대화상자는 감수.
     let json = serde_json::json!({
         "formatVersion": 3,
-        "accounts": [
-            {
-                "active": true,
-                "type": "Offline",
-                "profile": {
-                    "id": uuid,
-                    "name": name,
-                    "capes": [],
-                    "skin": { "id": "", "url": "", "variant": "CLASSIC" }
-                }
-            },
-            {
-                "active": false,
-                "type": "MSA",
-                "msa-client-id": "",
-                "profile": {},
-                "entitlement": {
-                    "ownsMinecraft": true,
-                    "canPlayMinecraft": true
-                }
+        "accounts": [{
+            "active": true,
+            "type": "Offline",
+            "profile": {
+                "id": uuid,
+                "name": name,
+                "capes": [],
+                "skin": { "id": "", "url": "", "variant": "CLASSIC" }
             }
-        ]
+        }]
     });
     std::fs::write(&path, serde_json::to_vec_pretty(&json)?)?;
     tracing::info!(path = %path.display(), name, "기본 계정 생성 (MSA 형식 wrapper, 오프라인 플레이용)");

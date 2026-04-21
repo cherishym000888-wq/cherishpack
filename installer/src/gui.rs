@@ -450,10 +450,10 @@ impl App {
 
         // ── 닉네임 입력 섹션 (오프라인 서버 전용) ──
         let auth_section: Element<'_, Msg> = column![
-            text("닉네임").size(12).style(TEXT_MUTED),
+            text("닉네임 (체리쉬 서버에서 등록한 마인크래프트 아이디)").size(12).style(TEXT_MUTED),
             text_input("Player", &self.nickname)
                 .on_input(Msg::NicknameChanged)
-                .width(Length::Fixed(220.0))
+                .width(Length::Fixed(260.0))
                 .size(14)
                 .padding([7, 10]),
         ].spacing(6).align_items(Alignment::Center).into();
