@@ -241,9 +241,12 @@ pub fn set_instance_java(dirs: &AppDirs, javaw: &Path) -> Result<()> {
 
     let mut lines: Vec<String> = content.lines().map(|l| l.to_string()).collect();
 
-    // 기존 키 덮어쓰기 또는 추가
-    set_or_insert(&mut lines, "OverrideJava", "true");
+    // Prism schema: OverrideJavaLocation=true 여야 JavaPath 가 글로벌 대신 인스턴스 값을 쓴다.
+    // (OverrideJava 키는 존재하지 않음 — 0.1.11 까지 잘못된 키를 쓰고 있었음)
+    set_or_insert(&mut lines, "OverrideJavaLocation", "true");
     set_or_insert(&mut lines, "JavaPath", &javaw_str);
+    // 인스턴스 자체 설정을 쓰게 하려면 AutomaticJava 비활성화 필요
+    set_or_insert(&mut lines, "AutomaticJava", "false");
 
     let out = lines.join("\n") + "\n";
     std::fs::write(&cfg_path, out)?;
