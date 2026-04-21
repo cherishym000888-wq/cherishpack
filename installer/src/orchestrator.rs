@@ -258,11 +258,6 @@ async fn run_inner(
     if let Err(e) = prism::write_default_options_if_missing(dirs) {
         warn_!("options.txt 기본값 작성 실패: {e:#}");
     }
-    match prism::write_default_prism_cfg_if_missing(dirs, &opts.offline_nickname) {
-        Ok(true) => info!("prismlauncher.cfg 기본값 생성 (첫실행 마법사 스킵)"),
-        Ok(false) => info!("기존 prismlauncher.cfg 유지"),
-        Err(e) => warn_!("prismlauncher.cfg 작성 실패: {e:#}"),
-    }
 
     // 11.7. 프리셋에 따라 리소스팩 + 쉐이더 선택 적용
     let preset_key = opts.preset.as_deref().unwrap_or("medium");

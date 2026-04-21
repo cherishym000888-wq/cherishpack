@@ -157,35 +157,16 @@ pub fn import_accounts_if_missing(dirs: &AppDirs) -> Result<bool> {
     Ok(false)
 }
 
-/// accounts.json 이 없거나 비어있으면 계정 두 개를 심는다:
-///   1. **Offline (active)** — 실제 플레이용. profile 포함. AuthFlow 는 MSA 에만 스텝을
-///      추가하므로 Offline refresh 는 즉시 succeed() → 대화상자 없음.
-///   2. **MSA (dummy, inactive)** — `anyAccountIsValid()` = `ownsMinecraft && type != Offline`
-///      조건 통과 용도. profile 을 `{}` 로 비워 `validity_ = None` → `shouldRefresh` false
-///      → 토큰 갱신 시도 자체가 안 일어남 → "Client ID changed" 대화상자 없음.
-///      entitlement 는 명시적으로 넣어 `ownsMinecraft=true` 유지.
+/// accounts.json 이 없으면 오프라인 계정 하나를 심는다.
+/// 이미 파일이 있으면 건드리지 않아 기존/MS 계정 보존.
 pub fn seed_offline_account_if_missing(dirs: &AppDirs, nickname: &str) -> Result<bool> {
     let path = dirs.prism_root.join("accounts.json");
     if path.exists() {
-        // 파일이 있더라도 accounts 배열이 비어있으면 심는다
-        if let Ok(bytes) = std::fs::read(&path) {
-            if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes) {
-                let has_any = v.get("accounts")
-                    .and_then(|a| a.as_array())
-                    .map(|a| !a.is_empty())
-                    .unwrap_or(false);
-                if has_any {
-                    return Ok(false);
-                }
-            }
-        }
+        return Ok(false);
     }
     std::fs::create_dir_all(&dirs.prism_root)?;
     let name = if nickname.trim().is_empty() { "Player" } else { nickname };
     let uuid = offline_uuid(name);
-    // Offline 전용: Prism 의 ownsMinecraft() 가 type != Offline 하드코드 체크라
-    // dummy MSA 를 넣어도 LaunchController::decideLaunchMode 의 forced refresh 로 'Client ID changed'
-    // 대화상자가 뜬다. 대안으로 Offline 만 시드하고 "Play Demo?" 대화상자는 감수.
     let json = serde_json::json!({
         "formatVersion": 3,
         "accounts": [{
@@ -200,7 +181,7 @@ pub fn seed_offline_account_if_missing(dirs: &AppDirs, nickname: &str) -> Result
         }]
     });
     std::fs::write(&path, serde_json::to_vec_pretty(&json)?)?;
-    tracing::info!(path = %path.display(), name, "기본 계정 생성 (MSA 형식 wrapper, 오프라인 플레이용)");
+    tracing::info!(path = %path.display(), name, "오프라인 계정 기본값 생성");
     Ok(true)
 }
 
@@ -213,43 +194,6 @@ fn offline_uuid(name: &str) -> String {
     b[6] = (b[6] & 0x0f) | 0x30;
     b[8] = (b[8] & 0x3f) | 0x80;
     hex::encode(b)
-}
-
-/// prismlauncher.cfg 가 없으면 기본 설정을 심어 첫 실행 마법사(언어/테마/MS계정/데모)를 건너뛴다.
-/// - `ConfigVersion` 존재 = 마법사 스킵 트리거
-/// - `Language=ko` = 언어 선택 창 스킵
-/// - `ApplicationTheme`/`IconTheme` = Appearance 창 스킵
-/// - `LastOfflinePlayerName` = 오프라인 닉 기본값
-/// - `CloseAfterLaunch=true` = MC 기동 후 Prism 창 자동 종료 (몰입감)
-pub fn write_default_prism_cfg_if_missing(dirs: &AppDirs, nickname: &str) -> Result<bool> {
-    let path = dirs.prism_root.join("prismlauncher.cfg");
-    if path.exists() {
-        return Ok(false);
-    }
-    std::fs::create_dir_all(&dirs.prism_root)?;
-    let name = if nickname.trim().is_empty() { "Player" } else { nickname };
-    let content = format!(
-        "[General]\n\
-         ConfigVersion=1.3\n\
-         ApplicationTheme=bright\n\
-         IconTheme=pe_colored\n\
-         Language=ko\n\
-         LastOfflinePlayerName={name}\n\
-         CloseAfterLaunch=true\n\
-         ShowConsole=false\n\
-         AutoCloseConsole=true\n\
-         ShowConsoleOnError=true\n\
-         ConsoleMaxLines=100000\n\
-         ConsoleOverflowStop=true\n\
-         UpdateDialogCheckDate=2099-12-31\n\
-         IgnoreJavaWizard=true\n\
-         UserAskedAboutAutomaticJavaDownload=true\n\
-         AutomaticJavaDownload=false\n\
-         AutomaticJavaSwitch=false\n"
-    );
-    std::fs::write(&path, content)?;
-    tracing::info!(path = %path.display(), "prismlauncher.cfg 기본값 생성 (마법사 스킵)");
-    Ok(true)
 }
 
 /// 첫 실행 시 한국어 + 접근성 온보딩 스킵을 위한 options.txt 기본값.
