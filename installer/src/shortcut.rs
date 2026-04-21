@@ -11,10 +11,11 @@ pub fn create_desktop_shortcut(
     target_exe: &Path,
     args: &str,
     working_dir: &Path,
+    icon_path: Option<&Path>,
 ) -> Result<()> {
     let desktop = desktop_dir().ok_or_else(|| anyhow::anyhow!("바탕화면 경로를 찾을 수 없음"))?;
     let lnk = desktop.join(format!("{name}.lnk"));
-    create_lnk_at(&lnk, target_exe, args, working_dir)
+    create_lnk_at(&lnk, target_exe, args, working_dir, icon_path)
 }
 
 /// 시작 메뉴 바로가기.
@@ -23,11 +24,12 @@ pub fn create_startmenu_shortcut(
     target_exe: &Path,
     args: &str,
     working_dir: &Path,
+    icon_path: Option<&Path>,
 ) -> Result<()> {
     let sm = startmenu_dir().ok_or_else(|| anyhow::anyhow!("시작메뉴 경로를 찾을 수 없음"))?;
     std::fs::create_dir_all(&sm).ok();
     let lnk = sm.join(format!("{name}.lnk"));
-    create_lnk_at(&lnk, target_exe, args, working_dir)
+    create_lnk_at(&lnk, target_exe, args, working_dir, icon_path)
 }
 
 fn create_lnk_at(
@@ -35,7 +37,13 @@ fn create_lnk_at(
     target_exe: &Path,
     args: &str,
     working_dir: &Path,
+    icon_path: Option<&Path>,
 ) -> Result<()> {
+
+    let icon_spec = match icon_path {
+        Some(p) => format!("{},0", p.to_string_lossy()),
+        None => format!("{},0", target_exe.to_string_lossy()),
+    };
 
     // PowerShell 인용 이슈 피하려고 base64로 스크립트 전달
     let ps_script = format!(
@@ -44,7 +52,7 @@ $s = (New-Object -ComObject WScript.Shell).CreateShortcut({lnk})
 $s.TargetPath = {target}
 $s.Arguments = {args}
 $s.WorkingDirectory = {wd}
-$s.IconLocation = {target} + ',0'
+$s.IconLocation = {icon}
 $s.Description = 'CherishPack'
 $s.Save()
 "#,
@@ -52,6 +60,7 @@ $s.Save()
         target = ps_quote(target_exe.to_string_lossy().as_ref()),
         args = ps_quote(args),
         wd = ps_quote(working_dir.to_string_lossy().as_ref()),
+        icon = ps_quote(&icon_spec),
     );
 
     let encoded = to_utf16_base64(&ps_script);

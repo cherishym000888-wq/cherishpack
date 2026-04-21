@@ -314,7 +314,7 @@ impl Application for App {
                     channel: Channel::Stable,
                     preset: Some(self.chosen_preset.key().to_string()),
                     auto_launch: false,
-                    offline_mode: self.auth_mode == AuthMode::Offline,
+                    offline_mode: true, // 오프라인 서버 전용 — 상시 오프라인
                     offline_nickname: nickname,
                 };
                 tokio::spawn(async move { orchestrator::run(dirs, opts, tx).await });
@@ -324,7 +324,7 @@ impl Application for App {
             Msg::Launch => {
                 let exe = self.dirs.prism_root.join("prismlauncher.exe");
                 if exe.exists() {
-                    let _ = crate::prism::spawn_detached_ex(&exe, &self.dirs.prism_root, self.auth_mode == AuthMode::Offline);
+                    let _ = crate::prism::spawn_detached_ex(&exe, &self.dirs.prism_root, true);
                 }
                 iced::window::close(iced::window::Id::MAIN)
             }
@@ -448,41 +448,15 @@ impl App {
         .padding([10, 16])
         .style(iced::theme::Container::Custom(Box::new(CardStyle)));
 
-        // ── 인증 섹션 ──
-        let offline_sel = self.auth_mode == AuthMode::Offline;
+        // ── 닉네임 입력 섹션 (오프라인 서버 전용) ──
         let auth_section: Element<'_, Msg> = column![
-            text("플레이 방식").size(12).style(TEXT_MUTED),
-            row![
-                {
-                    let b = button(text(if offline_sel { "● 오프라인" } else { "○ 오프라인" }).size(13))
-                        .on_press(Msg::PickAuth(AuthMode::Offline)).padding([8, 14]);
-                    if offline_sel { b.style(iced::theme::Button::Custom(Box::new(BtnSelected))) }
-                    else           { b.style(iced::theme::Button::Custom(Box::new(BtnNormal)))   }
-                },
-                {
-                    let b = button(text(if !offline_sel { "● Microsoft 로그인" } else { "○ Microsoft 로그인" }).size(13))
-                        .on_press(Msg::PickAuth(AuthMode::Microsoft)).padding([8, 14]);
-                    if !offline_sel { b.style(iced::theme::Button::Custom(Box::new(BtnSelected))) }
-                    else            { b.style(iced::theme::Button::Custom(Box::new(BtnNormal)))   }
-                },
-            ].spacing(8),
-            {
-                let e: Element<'_, Msg> = if offline_sel {
-                    row![
-                        text("닉네임").size(12).style(TEXT_MUTED),
-                        text_input("Player", &self.nickname)
-                            .on_input(Msg::NicknameChanged)
-                            .width(Length::Fixed(180.0))
-                            .size(13)
-                            .padding([7, 10]),
-                    ].spacing(10).align_items(Alignment::Center).into()
-                } else {
-                    text("설치 후 첫실행시 Microsoft 계정을 추가 할 수 있습니다.")
-                        .size(11).style(TEXT_MUTED).into()
-                };
-                e
-            },
-        ].spacing(8).into();
+            text("닉네임").size(12).style(TEXT_MUTED),
+            text_input("Player", &self.nickname)
+                .on_input(Msg::NicknameChanged)
+                .width(Length::Fixed(220.0))
+                .size(14)
+                .padding([7, 10]),
+        ].spacing(6).align_items(Alignment::Center).into();
 
         // ── 전체 레이아웃 ──
         let content = column![

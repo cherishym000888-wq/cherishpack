@@ -218,13 +218,24 @@ async fn run_inner(
     state::save(&dirs.state_file, &st)?;
 
     // 11.5. 바탕화면 / 시작메뉴 바로가기 (실패해도 전체 성공을 막지 않음)
+    //   아이콘은 설치기 바이너리에 내장된 icon.ico 를 prism 루트에 풀어 경로로 지정
+    let icon_bytes: &[u8] = include_bytes!("../resources/icon.ico");
+    let icon_path = dirs.prism_root.join("cherishpack.ico");
+    if let Err(e) = std::fs::create_dir_all(&dirs.prism_root) {
+        warn_!("prism_root 생성 실패: {e:#}");
+    }
+    if let Err(e) = std::fs::write(&icon_path, icon_bytes) {
+        warn_!("아이콘 파일 기록 실패: {e:#}");
+    }
+    let icon_opt = if icon_path.exists() { Some(icon_path.as_path()) } else { None };
+
     let exe = dirs.prism_root.join("prismlauncher.exe");
     let args = format!("-l {}", crate::paths::INSTANCE_NAME);
-    match shortcut::create_desktop_shortcut("체리쉬월드", &exe, &args, &dirs.prism_root) {
+    match shortcut::create_desktop_shortcut("체리쉬월드", &exe, &args, &dirs.prism_root, icon_opt) {
         Ok(_) => info!("바탕화면 바로가기 '체리쉬월드' 생성"),
         Err(e) => warn_!("바탕화면 바로가기 생성 실패: {e:#}"),
     }
-    match shortcut::create_startmenu_shortcut("체리쉬월드", &exe, &args, &dirs.prism_root) {
+    match shortcut::create_startmenu_shortcut("체리쉬월드", &exe, &args, &dirs.prism_root, icon_opt) {
         Ok(_) => info!("시작메뉴 바로가기 '체리쉬월드' 생성"),
         Err(e) => warn_!("시작메뉴 바로가기 생성 실패: {e:#}"),
     }

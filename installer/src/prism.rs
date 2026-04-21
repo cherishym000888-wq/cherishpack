@@ -157,11 +157,13 @@ pub fn import_accounts_if_missing(dirs: &AppDirs) -> Result<bool> {
     Ok(false)
 }
 
-/// accounts.json 이 없거나 비어있으면 계정 하나를 심는다.
-/// **주의**: Prism 의 `anyAccountIsValid()` 는 `type != Offline && ownsMinecraft` 를 요구
-/// → 순수 오프라인 타입은 LoginWizard 트리거를 막지 못한다.
-/// 해서 `type: "MSA"` + `entitlement.ownsMinecraft: true` 형식으로 심되, 실제 토큰은 비워둠.
-/// Prism 은 initial 체크에서 "유효" 판정 → LoginWizard 스킵. 실제 MSA 로그인 기능은 안 쓰므로 무해.
+/// accounts.json 이 없거나 비어있으면 계정 두 개를 심는다:
+///   1. **Offline (active)** — 실제 플레이용. profile 포함. AuthFlow 는 MSA 에만 스텝을
+///      추가하므로 Offline refresh 는 즉시 succeed() → 대화상자 없음.
+///   2. **MSA (dummy, inactive)** — `anyAccountIsValid()` = `ownsMinecraft && type != Offline`
+///      조건 통과 용도. profile 을 `{}` 로 비워 `validity_ = None` → `shouldRefresh` false
+///      → 토큰 갱신 시도 자체가 안 일어남 → "Client ID changed" 대화상자 없음.
+///      entitlement 는 명시적으로 넣어 `ownsMinecraft=true` 유지.
 pub fn seed_offline_account_if_missing(dirs: &AppDirs, nickname: &str) -> Result<bool> {
     let path = dirs.prism_root.join("accounts.json");
     if path.exists() {
@@ -181,32 +183,30 @@ pub fn seed_offline_account_if_missing(dirs: &AppDirs, nickname: &str) -> Result
     std::fs::create_dir_all(&dirs.prism_root)?;
     let name = if nickname.trim().is_empty() { "Player" } else { nickname };
     let uuid = offline_uuid(name);
-    // MSA 타입으로 표기. entitlement.ownsMinecraft=true 면 anyAccountIsValid() 통과.
     let json = serde_json::json!({
         "formatVersion": 3,
-        "accounts": [{
-            "active": true,
-            "type": "MSA",
-            "entitlement": {
-                "canPlayMinecraft": true,
-                "ownsMinecraft": true
+        "accounts": [
+            {
+                "active": true,
+                "type": "Offline",
+                "profile": {
+                    "id": uuid,
+                    "name": name,
+                    "capes": [],
+                    "skin": { "id": "", "url": "", "variant": "CLASSIC" }
+                }
             },
-            "profile": {
-                "id": uuid,
-                "name": name,
-                "capes": [],
-                "skin": { "id": "", "url": "", "variant": "CLASSIC" }
-            },
-            "ygg": {
-                "extra": {
-                    "clientToken": "",
-                    "serverID": "",
-                    "userName": ""
-                },
-                "iat": 0,
-                "token": ""
+            {
+                "active": false,
+                "type": "MSA",
+                "msa-client-id": "",
+                "profile": {},
+                "entitlement": {
+                    "ownsMinecraft": true,
+                    "canPlayMinecraft": true
+                }
             }
-        }]
+        ]
     });
     std::fs::write(&path, serde_json::to_vec_pretty(&json)?)?;
     tracing::info!(path = %path.display(), name, "기본 계정 생성 (MSA 형식 wrapper, 오프라인 플레이용)");
