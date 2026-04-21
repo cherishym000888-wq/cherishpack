@@ -157,33 +157,59 @@ pub fn import_accounts_if_missing(dirs: &AppDirs) -> Result<bool> {
     Ok(false)
 }
 
-/// accounts.json 이 없으면 오프라인 계정 하나를 심는다.
-/// 데모 모드 진입 → Pixelmon MainMenuModifier NPE 크래시 회피가 목적.
-/// 이미 파일이 있으면 건드리지 않아 기존/MS 계정 보존.
+/// accounts.json 이 없거나 비어있으면 계정 하나를 심는다.
+/// **주의**: Prism 의 `anyAccountIsValid()` 는 `type != Offline && ownsMinecraft` 를 요구
+/// → 순수 오프라인 타입은 LoginWizard 트리거를 막지 못한다.
+/// 해서 `type: "MSA"` + `entitlement.ownsMinecraft: true` 형식으로 심되, 실제 토큰은 비워둠.
+/// Prism 은 initial 체크에서 "유효" 판정 → LoginWizard 스킵. 실제 MSA 로그인 기능은 안 쓰므로 무해.
 pub fn seed_offline_account_if_missing(dirs: &AppDirs, nickname: &str) -> Result<bool> {
     let path = dirs.prism_root.join("accounts.json");
     if path.exists() {
-        return Ok(false);
+        // 파일이 있더라도 accounts 배열이 비어있으면 심는다
+        if let Ok(bytes) = std::fs::read(&path) {
+            if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                let has_any = v.get("accounts")
+                    .and_then(|a| a.as_array())
+                    .map(|a| !a.is_empty())
+                    .unwrap_or(false);
+                if has_any {
+                    return Ok(false);
+                }
+            }
+        }
     }
     std::fs::create_dir_all(&dirs.prism_root)?;
-    // Minecraft 오프라인 UUID 규약: md5("OfflinePlayer:<name>") 에 버전3 bits 세팅
     let name = if nickname.trim().is_empty() { "Player" } else { nickname };
     let uuid = offline_uuid(name);
+    // MSA 타입으로 표기. entitlement.ownsMinecraft=true 면 anyAccountIsValid() 통과.
     let json = serde_json::json!({
         "formatVersion": 3,
         "accounts": [{
             "active": true,
-            "type": "Offline",
+            "type": "MSA",
+            "entitlement": {
+                "canPlayMinecraft": true,
+                "ownsMinecraft": true
+            },
             "profile": {
                 "id": uuid,
                 "name": name,
                 "capes": [],
                 "skin": { "id": "", "url": "", "variant": "CLASSIC" }
+            },
+            "ygg": {
+                "extra": {
+                    "clientToken": "",
+                    "serverID": "",
+                    "userName": ""
+                },
+                "iat": 0,
+                "token": ""
             }
         }]
     });
     std::fs::write(&path, serde_json::to_vec_pretty(&json)?)?;
-    tracing::info!(path = %path.display(), "오프라인 계정 기본값 생성 (Player)");
+    tracing::info!(path = %path.display(), name, "기본 계정 생성 (MSA 형식 wrapper, 오프라인 플레이용)");
     Ok(true)
 }
 
@@ -224,7 +250,11 @@ pub fn write_default_prism_cfg_if_missing(dirs: &AppDirs, nickname: &str) -> Res
          ShowConsoleOnError=true\n\
          ConsoleMaxLines=100000\n\
          ConsoleOverflowStop=true\n\
-         UpdateDialogCheckDate=2099-12-31\n"
+         UpdateDialogCheckDate=2099-12-31\n\
+         IgnoreJavaWizard=true\n\
+         UserAskedAboutAutomaticJavaDownload=true\n\
+         AutomaticJavaDownload=false\n\
+         AutomaticJavaSwitch=false\n"
     );
     std::fs::write(&path, content)?;
     tracing::info!(path = %path.display(), "prismlauncher.cfg 기본값 생성 (마법사 스킵)");
