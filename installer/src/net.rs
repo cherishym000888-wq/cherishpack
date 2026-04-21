@@ -32,13 +32,31 @@ fn download_client() -> Result<reqwest::Client> {
 }
 
 pub async fn fetch_bytes(url: &str) -> Result<Vec<u8>> {
-    let resp = client()?
-        .get(url)
-        .send()
-        .await
-        .with_context(|| format!("HTTP GET 실패: {}", url))?
-        .error_for_status()?;
-    Ok(resp.bytes().await?.to_vec())
+    // 큰 파일(모드 jar)도 받을 수 있게 download_client(전체 타임아웃 없음) 사용.
+    // 일시적 네트워크 hiccup을 흡수하기 위해 지수 백오프 재시도 3회.
+    let mut last_err: Option<anyhow::Error> = None;
+    for attempt in 0..3u32 {
+        if attempt > 0 {
+            let wait = Duration::from_millis(500u64 << attempt); // 1s, 2s
+            tokio::time::sleep(wait).await;
+            tracing::warn!(url = %url, attempt, "fetch_bytes 재시도");
+        }
+        let r: Result<Vec<u8>> = async {
+            let resp = download_client()?
+                .get(url)
+                .send()
+                .await
+                .with_context(|| format!("HTTP GET 실패: {}", url))?
+                .error_for_status()?;
+            Ok(resp.bytes().await?.to_vec())
+        }
+        .await;
+        match r {
+            Ok(b) => return Ok(b),
+            Err(e) => last_err = Some(e),
+        }
+    }
+    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("HTTP GET 실패: {}", url)))
 }
 
 pub async fn fetch_text(url: &str) -> Result<String> {
