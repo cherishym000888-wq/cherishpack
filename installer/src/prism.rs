@@ -198,6 +198,39 @@ fn offline_uuid(name: &str) -> String {
     hex::encode(b)
 }
 
+/// prismlauncher.cfg 가 없으면 기본 설정을 심어 첫 실행 마법사(언어/테마/MS계정/데모)를 건너뛴다.
+/// - `ConfigVersion` 존재 = 마법사 스킵 트리거
+/// - `Language=ko` = 언어 선택 창 스킵
+/// - `ApplicationTheme`/`IconTheme` = Appearance 창 스킵
+/// - `LastOfflinePlayerName` = 오프라인 닉 기본값
+/// - `CloseAfterLaunch=true` = MC 기동 후 Prism 창 자동 종료 (몰입감)
+pub fn write_default_prism_cfg_if_missing(dirs: &AppDirs, nickname: &str) -> Result<bool> {
+    let path = dirs.prism_root.join("prismlauncher.cfg");
+    if path.exists() {
+        return Ok(false);
+    }
+    std::fs::create_dir_all(&dirs.prism_root)?;
+    let name = if nickname.trim().is_empty() { "Player" } else { nickname };
+    let content = format!(
+        "[General]\n\
+         ConfigVersion=1.3\n\
+         ApplicationTheme=bright\n\
+         IconTheme=pe_colored\n\
+         Language=ko\n\
+         LastOfflinePlayerName={name}\n\
+         CloseAfterLaunch=true\n\
+         ShowConsole=false\n\
+         AutoCloseConsole=true\n\
+         ShowConsoleOnError=true\n\
+         ConsoleMaxLines=100000\n\
+         ConsoleOverflowStop=true\n\
+         UpdateDialogCheckDate=2099-12-31\n"
+    );
+    std::fs::write(&path, content)?;
+    tracing::info!(path = %path.display(), "prismlauncher.cfg 기본값 생성 (마법사 스킵)");
+    Ok(true)
+}
+
 /// 첫 실행 시 한국어 + 접근성 온보딩 스킵을 위한 options.txt 기본값.
 /// 이미 파일이 있으면 건드리지 않는다 (사용자 설정 보존).
 pub fn write_default_options_if_missing(dirs: &AppDirs) -> Result<()> {
