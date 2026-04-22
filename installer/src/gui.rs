@@ -219,16 +219,11 @@ pub fn run(dirs: AppDirs) -> Result<()> {
     .map_err(|e| anyhow::anyhow!("iced 실행 실패: {e}"))
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AuthMode { Offline, Microsoft }
-
 struct App {
     dirs: AppDirs,
     screen: Screen,
     hw: HwSnapshot,
     chosen_preset: Preset,
-    auth_mode: AuthMode,
-    nickname: String,
     update_notice: Option<String>,
     progress_done: u64,
     progress_total: Option<u64>,
@@ -238,6 +233,8 @@ struct App {
     substep_total: usize,
     log_lines: Vec<String>,
     rx: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<OrcEvent>>>>,
+    #[cfg(feature = "offline")]
+    nickname: String,
 }
 
 enum Screen {
@@ -251,12 +248,14 @@ enum Screen {
 pub enum Msg {
     StartInstall,
     PickPreset(Preset),
-    PickAuth(AuthMode),
-    NicknameChanged(String),
     Launch,
     Close,
     Orc(OrcEvent),
     UpdateCheck(Option<String>),
+    #[cfg(feature = "offline")]
+    SetNickname(String),
+    #[cfg(feature = "offline")]
+    StartOfflineInstall,
 }
 
 impl Application for App {
@@ -274,8 +273,6 @@ impl Application for App {
                 screen: Screen::Welcome,
                 hw,
                 chosen_preset,
-                auth_mode: AuthMode::Offline,
-                nickname: "Player".to_string(),
                 update_notice: None,
                 progress_done: 0,
                 progress_total: None,
@@ -285,6 +282,8 @@ impl Application for App {
                 substep_total: 0,
                 log_lines: Vec::new(),
                 rx: Arc::new(Mutex::new(None)),
+                #[cfg(feature = "offline")]
+                nickname: String::new(),
             },
             Command::perform(check_for_update(), Msg::UpdateCheck),
         )
@@ -295,27 +294,14 @@ impl Application for App {
     fn update(&mut self, msg: Msg) -> Command<Msg> {
         match msg {
             Msg::PickPreset(p) => { self.chosen_preset = p; Command::none() }
-            Msg::PickAuth(m)   => { self.auth_mode = m;     Command::none() }
-            Msg::NicknameChanged(s) => {
-                let cleaned: String = s
-                    .chars()
-                    .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
-                    .take(16)
-                    .collect();
-                self.nickname = cleaned;
-                Command::none()
-            }
             Msg::StartInstall => {
                 let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<OrcEvent>();
                 *self.rx.lock().unwrap() = Some(rx);
                 let dirs = self.dirs.clone();
-                let nickname = if self.nickname.trim().is_empty() { "Player".into() } else { self.nickname.clone() };
                 let opts = RunOptions {
                     channel: Channel::Stable,
                     preset: Some(self.chosen_preset.key().to_string()),
                     auto_launch: false,
-                    offline_mode: true, // 오프라인 서버 전용 — 상시 오프라인
-                    offline_nickname: nickname,
                 };
                 tokio::spawn(async move { orchestrator::run(dirs, opts, tx).await });
                 self.screen = Screen::Installing;
@@ -331,6 +317,41 @@ impl Application for App {
             Msg::Close          => iced::window::close(iced::window::Id::MAIN),
             Msg::UpdateCheck(n) => { self.update_notice = n; Command::none() }
             Msg::Orc(ev)        => { self.apply_event(ev);   Command::none() }
+            #[cfg(feature = "offline")]
+            Msg::SetNickname(s) => { self.nickname = s; Command::none() }
+            #[cfg(feature = "offline")]
+            Msg::StartOfflineInstall => {
+                use crate::launcher::orchestrator::{run_launcher, Event as LEv, RunOptions as LOpt};
+                let (tx_orc, rx_orc) = tokio::sync::mpsc::unbounded_channel::<OrcEvent>();
+                *self.rx.lock().unwrap() = Some(rx_orc);
+
+                let (tx_l, mut rx_l) = tokio::sync::mpsc::unbounded_channel::<LEv>();
+                let opts = LOpt {
+                    channel: Channel::Stable,
+                    auto_launch: true,
+                    preset: Some(self.chosen_preset.key().to_string()),
+                    offline_nickname: Some(self.nickname.clone()),
+                };
+                tokio::spawn(run_launcher(opts, tx_l));
+                tokio::spawn(async move {
+                    while let Some(ev) = rx_l.recv().await {
+                        let mapped = match ev {
+                            LEv::Status(s)   => OrcEvent::Status(s),
+                            LEv::Info(s)     => OrcEvent::Info(s),
+                            LEv::Warn(s)     => OrcEvent::Warn(s),
+                            LEv::Progress { done, total, label } =>
+                                OrcEvent::Progress { done, total, label },
+                            LEv::AuthChallenge { user_code, verification_uri, .. } =>
+                                OrcEvent::Info(format!("MSA 코드: {} → {}", user_code, verification_uri)),
+                            LEv::Done { launched } => OrcEvent::Done { launched },
+                            LEv::Error(e)    => OrcEvent::Error(e),
+                        };
+                        if tx_orc.send(mapped).is_err() { break; }
+                    }
+                });
+                self.screen = Screen::Installing;
+                Command::none()
+            }
         }
     }
 
@@ -448,16 +469,6 @@ impl App {
         .padding([10, 16])
         .style(iced::theme::Container::Custom(Box::new(CardStyle)));
 
-        // ── 닉네임 입력 섹션 (오프라인 서버 전용) ──
-        let auth_section: Element<'_, Msg> = column![
-            text("닉네임 (체리쉬 서버에서 등록한 마인크래프트 아이디)").size(12).style(TEXT_MUTED),
-            text_input("Player", &self.nickname)
-                .on_input(Msg::NicknameChanged)
-                .width(Length::Fixed(260.0))
-                .size(14)
-                .padding([7, 10]),
-        ].spacing(6).align_items(Alignment::Center).into();
-
         // ── 전체 레이아웃 ──
         let content = column![
             column![
@@ -478,8 +489,6 @@ impl App {
                 ].spacing(8).width(Length::Fill),
             ].spacing(8).align_items(Alignment::Center).width(Length::Fill),
 
-            auth_section,
-
             Space::with_height(4),
 
             row![
@@ -492,6 +501,8 @@ impl App {
                     .style(iced::theme::Button::Custom(Box::new(BtnNormal)))
                     .padding([10, 16]),
             ].spacing(12),
+
+            self.view_offline_panel(),
         ]
         .spacing(14)
         .align_items(Alignment::Center)
@@ -509,6 +520,40 @@ impl App {
         .height(Length::Fill)
         .style(iced::theme::Container::Custom(Box::new(BgStyle)))
         .into()
+    }
+
+// ─────────────────────── 오프라인 패널 (테스트 빌드 한정) ─────
+
+    #[cfg(feature = "offline")]
+    fn view_offline_panel(&self) -> Element<'_, Msg> {
+        let nick_trim = self.nickname.trim().to_string();
+        let mut start_btn = button(text("  오프라인 테스트 시작  ").size(13))
+            .style(iced::theme::Button::Custom(Box::new(BtnPrimary)))
+            .padding([8, 18]);
+        if !nick_trim.is_empty() {
+            start_btn = start_btn.on_press(Msg::StartOfflineInstall);
+        }
+        container(
+            column![
+                text("⚠ 내부 테스트 빌드 — MSA 없이 닉네임으로 자체 런처 실행")
+                    .size(11).style(WARN),
+                row![
+                    text_input("닉네임", &self.nickname)
+                        .on_input(Msg::SetNickname)
+                        .padding(6)
+                        .width(Length::Fixed(160.0)),
+                    start_btn,
+                ].spacing(10).align_items(Alignment::Center),
+            ].spacing(6).align_items(Alignment::Center)
+        )
+        .padding([10, 14])
+        .style(iced::theme::Container::Custom(Box::new(WarnBadge)))
+        .into()
+    }
+
+    #[cfg(not(feature = "offline"))]
+    fn view_offline_panel(&self) -> Element<'_, Msg> {
+        Space::with_height(0).into()
     }
 
 // ─────────────────────── 화면: 설치 중 ──────────────────────

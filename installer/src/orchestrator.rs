@@ -28,10 +28,6 @@ pub struct RunOptions {
     pub channel: Channel,
     pub preset: Option<String>,
     pub auto_launch: bool,
-    /// true 면 오프라인 계정 시드, false 면 MS 로그인 필요 (시드 안 함)
-    pub offline_mode: bool,
-    /// 오프라인 모드일 때 사용할 닉네임
-    pub offline_nickname: String,
 }
 
 pub async fn run(
@@ -240,20 +236,17 @@ async fn run_inner(
         Err(e) => warn_!("시작메뉴 바로가기 생성 실패: {e:#}"),
     }
 
-    // 11.6. 기존 Prism 계정 import + 한국어/접근성 스킵 options.txt
-    match prism::import_accounts_if_missing(dirs) {
-        Ok(true) => info!("기존 Prism 계정(accounts.json) 을 가져왔습니다"),
-        Ok(false) => info!("가져올 기존 Prism 계정이 없거나 이미 존재합니다"),
-        Err(e) => warn_!("계정 가져오기 실패: {e:#}"),
+    // 11.6. 계정은 가져오지 않는다 — Prism client_id 가 다르면 토큰 refresh 가 실패해서
+    //       'Account refresh failed' 팝업이 먼저 뜨는 나쁜 UX 가 됨. 신규 설치는 처음부터
+    //       MSA 로그인하도록 둠.
+    info!("Microsoft 로그인 모드 — Prism 창에서 로그인 필요");
+    match prism::write_default_prism_cfg_if_missing(dirs) {
+        Ok(true) => info!("prismlauncher.cfg 기본값 생성 (첫실행 마법사 스킵)"),
+        Ok(false) => info!("기존 prismlauncher.cfg 유지"),
+        Err(e) => warn_!("prismlauncher.cfg 작성 실패: {e:#}"),
     }
-    if opts.offline_mode {
-        match prism::seed_offline_account_if_missing(dirs, &opts.offline_nickname) {
-            Ok(true) => info!("오프라인 계정 '{}' 생성", opts.offline_nickname),
-            Ok(false) => info!("기존 계정 유지 (accounts.json 있음)"),
-            Err(e) => warn_!("오프라인 계정 생성 실패: {e:#}"),
-        }
-    } else {
-        info!("Microsoft 로그인 모드 — 오프라인 계정 생성 생략 (Prism 창에서 로그인 필요)");
+    if let Err(e) = prism::ensure_korean_translation(dirs).await {
+        warn_!("한국어 번역 다운로드 실패(영어 UI 로 폴백): {e:#}");
     }
     if let Err(e) = prism::write_default_options_if_missing(dirs) {
         warn_!("options.txt 기본값 작성 실패: {e:#}");

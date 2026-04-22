@@ -178,6 +178,35 @@ async fn download_and_extract(
     Ok(javaw)
 }
 
+/// 자체 런처 전용 — Prism 경로(AppDirs) 없이 임의 폴더에 Java 21 보장.
+/// `java_dir`: 번들 Java 가 설치될 루트.  `cache_dir`: 다운로드 zip 임시 보관.
+#[cfg(feature = "offline")]
+pub async fn ensure_java_at(
+    java_dir: &Path,
+    cache_dir: &Path,
+    progress: Option<&JavaProgress>,
+) -> Result<JavaResult> {
+    if java_dir.is_dir() {
+        if let Some(path) = find_javaw_in_dir(java_dir) {
+            return Ok(JavaResult { javaw: path, installed_now: false });
+        }
+    }
+    if let Some(path) = find_system_java() {
+        return Ok(JavaResult { javaw: path, installed_now: false });
+    }
+    std::fs::create_dir_all(java_dir)?;
+    std::fs::create_dir_all(cache_dir)?;
+    let zip_path = cache_dir.join("openjdk-21.zip");
+    if let Some(cb) = progress { cb(0, None, "Java 21 다운로드 중 (Microsoft OpenJDK)"); }
+    net::download_plain(&OPENJDK_URL, &zip_path).await.context("Java 다운로드 실패")?;
+    if let Some(cb) = progress { cb(0, None, "Java 압축 해제 중"); }
+    extract_zip(&zip_path, java_dir)?;
+    let _ = std::fs::remove_file(&zip_path);
+    let javaw = find_javaw_in_dir(java_dir)
+        .ok_or_else(|| anyhow::anyhow!("Java 해제 후 javaw.exe 를 찾지 못함"))?;
+    Ok(JavaResult { javaw, installed_now: true })
+}
+
 /// 디렉터리 트리에서 bin/javaw.exe 재귀 탐색.
 fn find_javaw_in_dir(dir: &Path) -> Option<PathBuf> {
     // 1단계: dir/bin/javaw.exe

@@ -19,8 +19,11 @@ use std::path::{Path, PathBuf};
 use crate::net;
 use crate::paths::AppDirs;
 
+// Prism 11+ 는 첫 실행 시 prismlauncher.cfg 의 Language=ko 를 무시하고 영어 UI 로 뜨는
+// init-order 이슈가 있음. 10.0.5 는 해당 이슈가 없어서 시드한 언어가 바로 적용됨.
+// 새 Prism 이 필요해지면 버전 올리기.
 const GH_LATEST: &str =
-    "https://api.github.com/repos/PrismLauncher/PrismLauncher/releases/latest";
+    "https://api.github.com/repos/PrismLauncher/PrismLauncher/releases/tags/10.0.5";
 
 #[derive(Debug, Clone)]
 pub struct PrismInstall {
@@ -194,6 +197,64 @@ fn offline_uuid(name: &str) -> String {
     b[6] = (b[6] & 0x0f) | 0x30;
     b[8] = (b[8] & 0x3f) | 0x80;
     hex::encode(b)
+}
+
+/// prismlauncher.cfg 가 없으면 기본 설정을 심어 첫 실행 마법사(언어/테마/업데이트)를 건너뛴다.
+/// - `ConfigVersion` 존재 = 마법사 스킵 트리거
+/// - `Language=ko` = 언어 선택 창 스킵
+/// - `ApplicationTheme`/`IconTheme` = Appearance 창 스킵
+/// - `CloseAfterLaunch=true` = MC 기동 후 Prism 창 자동 종료 (몰입감)
+/// - `UpdateDialogCheckDate` 장기 미래 = 업데이트 팝업 억제
+pub fn write_default_prism_cfg_if_missing(dirs: &AppDirs) -> Result<bool> {
+    let path = dirs.prism_root.join("prismlauncher.cfg");
+    if path.exists() {
+        return Ok(false);
+    }
+    std::fs::create_dir_all(&dirs.prism_root)?;
+    // Prism 11 첫 실행 시 명시적 Language=ko 로 시드해도 영어 UI 로 뜨는 현상이 있음
+    // (Qt 번역기 로드 타이밍 이슈 추정). 윈도우 로케일 사용을 명시하고 Language 도 병행 설정.
+    // 타깃 사용자가 모두 한국인이므로 시스템 로케일 = ko_KR 로 가정.
+    let content = "[General]\n\
+         Language=ko\n\
+         UseSystemLocale=true\n\
+         ConfigVersion=1.3\n\
+         ApplicationTheme=bright\n\
+         IconTheme=pe_colored\n\
+         CloseAfterLaunch=true\n\
+         ShowConsole=false\n\
+         AutoCloseConsole=true\n\
+         ShowConsoleOnError=true\n\
+         ConsoleMaxLines=100000\n\
+         ConsoleOverflowStop=true\n\
+         UpdateDialogCheckDate=2099-12-31\n";
+    std::fs::write(&path, content)?;
+    tracing::info!(path = %path.display(), "prismlauncher.cfg 기본값 생성 (마법사 스킵)");
+    Ok(true)
+}
+
+/// Prism 의 한국어 번역 파일(mmc_ko.qm) 을 미리 받아 `translations/` 에 저장한다.
+/// Prism 은 이 폴더의 `.qm` 파일을 직접 로드하므로, 첫 실행부터 한국어 UI 가 뜬다.
+/// 번역 인덱스는 Prism 포터블이 기본 포함하는 `translations/index_v2.json` 을 사용.
+/// 네트워크 실패 시 조용히 경고만 (기본 영어 UI 로 폴백).
+pub async fn ensure_korean_translation(dirs: &AppDirs) -> Result<()> {
+    // Prism 번역 파일은 sha1 기반 이름으로 배포됨. 번역이 갱신되면 sha1 이 바뀌어
+    // 이 상수도 업데이트해야 하지만, 한 번에 단일 다운로드만 하면 되므로 index
+    // 조회 단계에서 실패할 위험을 없앨 수 있다. (2026-04-23 기준 최신 ko 번역)
+    const KO_QM_SHA1: &str = "afda617b83cf0012ddfb2b0444ea649ddecc5f2d";
+
+    let trans_dir = dirs.prism_root.join("translations");
+    let qm_path = trans_dir.join("mmc_ko.qm");
+    if qm_path.exists() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(&trans_dir)?;
+    let url = format!("https://i18n.prismlauncher.org/{}.class", KO_QM_SHA1);
+    tracing::info!(url, "한국어 번역 파일 다운로드");
+    net::download_plain(&url, &qm_path)
+        .await
+        .with_context(|| format!("download failed: {}", url))?;
+    tracing::info!(path = %qm_path.display(), "한국어 번역 파일 설치 완료");
+    Ok(())
 }
 
 /// 첫 실행 시 한국어 + 접근성 온보딩 스킵을 위한 options.txt 기본값.

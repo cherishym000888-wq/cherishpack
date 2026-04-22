@@ -31,6 +31,9 @@ mod shortcut;
 mod state;
 mod uninstall;
 
+#[cfg(feature = "offline")]
+mod launcher;
+
 use anyhow::Result;
 use tracing::{error, info};
 
@@ -51,11 +54,60 @@ fn main() -> Result<()> {
         return uninstall::run(&dirs);
     }
 
+    // 3.5. (offline 빌드 한정) `--offline <nick>` — Prism 우회, 자체 런처로 헤드리스 실행.
+    #[cfg(feature = "offline")]
+    {
+        if let Some(idx) = args.iter().position(|a| a == "--offline") {
+            let nick = args.get(idx + 1).cloned().unwrap_or_else(|| "tester".into());
+            return run_offline_headless(nick);
+        }
+    }
+
     // 4. GUI 실행 — 이후 Phase에서 실제 화면 구현
     if let Err(e) = gui::run(dirs) {
         error!(error = ?e, "GUI 종료 오류");
         return Err(e);
     }
 
+    Ok(())
+}
+
+#[cfg(feature = "offline")]
+fn run_offline_headless(nickname: String) -> Result<()> {
+    use launcher::orchestrator::{run_launcher, Event, RunOptions};
+    use channel::Channel;
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    rt.block_on(async move {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
+        let opts = RunOptions {
+            channel: Channel::Stable,
+            auto_launch: true,
+            preset: Some("medium".into()),
+            offline_nickname: Some(nickname),
+        };
+        let h = tokio::spawn(run_launcher(opts, tx));
+        while let Some(ev) = rx.recv().await {
+            match ev {
+                Event::Status(s)   => println!("[*] {s}"),
+                Event::Info(s)     => if !s.is_empty() { println!("    {s}") },
+                Event::Warn(s)     => println!("[!] {s}"),
+                Event::Progress { done, total, label } => {
+                    match total {
+                        Some(t) => println!("    {} {}/{}", label, done, t),
+                        None    => println!("    {} {}", label, done),
+                    }
+                }
+                Event::AuthChallenge { user_code, verification_uri, .. } => {
+                    println!("[MSA] {} → {}", user_code, verification_uri);
+                }
+                Event::Done { launched } => { println!("[v] 완료 (launched={launched})"); }
+                Event::Error(e) => { println!("[x] {e}"); }
+            }
+        }
+        let _ = h.await;
+    });
     Ok(())
 }

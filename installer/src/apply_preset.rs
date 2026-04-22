@@ -70,6 +70,16 @@ pub fn preset_assets(preset: &str) -> PresetAssets<'static> {
     }
 }
 
+/// 자체 런처(offline 빌드)용 — Prism instance.cfg 없이 .minecraft 단일 루트에만 적용.
+#[cfg(feature = "offline")]
+pub fn apply_for_self_launcher(mc_root: &Path, preset: &str) -> Result<()> {
+    let assets = preset_assets(preset);
+    apply_options_txt(mc_root, &assets)?;
+    apply_iris_properties(mc_root, &assets)?;
+    apply_dh_config(mc_root, &assets)?;
+    Ok(())
+}
+
 /// 프리셋 적용 — options.txt, iris.properties, DH config, instance.cfg 모두 갱신.
 pub fn apply(dirs: &AppDirs, preset: &str) -> Result<()> {
     let assets = preset_assets(preset);
