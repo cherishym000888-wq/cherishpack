@@ -55,11 +55,15 @@ fn main() -> Result<()> {
     }
 
     // 3.5. (offline 빌드 한정) `--offline <nick>` — Prism 우회, 자체 런처로 헤드리스 실행.
+    //      `-l` — launch-only (캐시된 닉네임으로 바로 게임 실행). 바탕화면 바로가기에서 사용.
     #[cfg(feature = "offline")]
     {
         if let Some(idx) = args.iter().position(|a| a == "--offline") {
             let nick = args.get(idx + 1).cloned().unwrap_or_else(|| "tester".into());
             return run_offline_headless(nick);
+        }
+        if args.iter().any(|a| a == "-l") {
+            return run_offline_launch_only();
         }
     }
 
@@ -69,6 +73,28 @@ fn main() -> Result<()> {
         return Err(e);
     }
 
+    Ok(())
+}
+
+#[cfg(feature = "offline")]
+fn run_offline_launch_only() -> Result<()> {
+    use launcher::orchestrator::{run_launch_only_offline, Event};
+    let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
+    rt.block_on(async move {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
+        let h = tokio::spawn(run_launch_only_offline(tx));
+        while let Some(ev) = rx.recv().await {
+            match ev {
+                Event::Status(s) => println!("[*] {s}"),
+                Event::Info(s)   => if !s.is_empty() { println!("    {s}") },
+                Event::Warn(s)   => println!("[!] {s}"),
+                Event::Error(e)  => println!("[x] {e}"),
+                Event::Done { .. } => println!("[v] 종료"),
+                _ => {}
+            }
+        }
+        let _ = h.await;
+    });
     Ok(())
 }
 

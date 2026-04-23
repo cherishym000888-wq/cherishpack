@@ -67,6 +67,36 @@ pub async fn fetch_client_jar(meta: &VersionMeta, dst: &Path) -> Result<()> {
     Ok(())
 }
 
+/// options.txt 의 `soundCategory_music:` 값을 0.0 으로 설정. 없으면 추가.
+/// 다른 사운드 카테고리(master/record/weather/block/...) 은 건드리지 않음.
+fn mute_mc_music_if_needed(mc_root: &std::path::Path) {
+    let path = mc_root.join("options.txt");
+    let Ok(content) = std::fs::read_to_string(&path) else { return; };
+    let mut found = false;
+    let mut changed = false;
+    let mut lines: Vec<String> = content.lines().map(|l| {
+        if l.starts_with("soundCategory_music:") {
+            found = true;
+            if l != "soundCategory_music:0.0" {
+                changed = true;
+                "soundCategory_music:0.0".into()
+            } else {
+                l.to_string()
+            }
+        } else {
+            l.to_string()
+        }
+    }).collect();
+    if !found {
+        lines.push("soundCategory_music:0.0".into());
+        changed = true;
+    }
+    if changed {
+        let _ = std::fs::write(&path, lines.join("\n") + "\n");
+        tracing::info!("options.txt soundCategory_music 0.0 설정 (BGM agent 충돌 회피)");
+    }
+}
+
 /// 최종 java 명령 조립. 프로세스는 아직 스폰하지 않는다.
 pub fn build_command(
     meta: &VersionMeta,
@@ -85,6 +115,34 @@ pub fn build_command(
     let mut jvm_args: Vec<String> = Vec::new();
     for a in &args.jvm {
         collect_arg(a, &tokens, &features, &mut jvm_args);
+    }
+
+    // NeoForge earlydisplay jar 재패치 — 라이브러리 다운로드 시 sha1 검증으로
+    // 롤백되므로 java 실행 직전 매번 확인 후 재적용.
+    if let Err(e) = super::patch_early_display::apply_if_needed(ctx.layout.libraries_dir()) {
+        tracing::warn!("earlydisplay 패치 실패 (계속 진행): {e:#}");
+    }
+
+    // options.txt 의 music volume 을 0 으로 — boot-agent BGM 과 겹치지 않게.
+    // 사운드·마스터 볼륨은 건드리지 않음 (효과음·환경음은 정상).
+    mute_mc_music_if_needed(ctx.layout.dirs.instance.as_path());
+
+    // 부팅 BGM 재생 agent — JVM 인자로 -javaagent 추가 시 premain 이 main() 전에
+    // 실행되어 NeoForge 핑크 로딩 화면 초반부터 음악 시작.
+    // exe 에 embed 된 jar 를 매번 root 에 쓰기 (없거나 크기 다르면 갱신).
+    const AGENT_BYTES: &[u8] = include_bytes!("../../resources/boot-agent.jar");
+    let agent_path = ctx.layout.dirs.root.join("boot-agent.jar");
+    let needs_write = !agent_path.exists()
+        || std::fs::metadata(&agent_path).map(|m| m.len() as usize != AGENT_BYTES.len()).unwrap_or(true);
+    if needs_write {
+        if let Err(e) = std::fs::write(&agent_path, AGENT_BYTES) {
+            tracing::warn!("boot-agent.jar 쓰기 실패: {e:#}");
+        } else {
+            tracing::info!("boot-agent.jar 배치 완료 ({}KB)", AGENT_BYTES.len() / 1024);
+        }
+    }
+    if agent_path.exists() {
+        jvm_args.insert(0, format!("-javaagent:{}", agent_path.display()));
     }
     // mainClass 는 jvm 인자 뒤, game 인자 앞.
     let mut game_args: Vec<String> = Vec::new();

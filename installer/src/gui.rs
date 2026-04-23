@@ -527,24 +527,20 @@ impl App {
     #[cfg(feature = "offline")]
     fn view_offline_panel(&self) -> Element<'_, Msg> {
         let nick_trim = self.nickname.trim().to_string();
-        let mut start_btn = button(text("  오프라인 테스트 시작  ").size(13))
+        let mut start_btn = button(text("  시작  ").size(13))
             .style(iced::theme::Button::Custom(Box::new(BtnPrimary)))
             .padding([8, 18]);
         if !nick_trim.is_empty() {
             start_btn = start_btn.on_press(Msg::StartOfflineInstall);
         }
         container(
-            column![
-                text("⚠ 내부 테스트 빌드 — MSA 없이 닉네임으로 자체 런처 실행")
-                    .size(11).style(WARN),
-                row![
-                    text_input("닉네임", &self.nickname)
-                        .on_input(Msg::SetNickname)
-                        .padding(6)
-                        .width(Length::Fixed(160.0)),
-                    start_btn,
-                ].spacing(10).align_items(Alignment::Center),
-            ].spacing(6).align_items(Alignment::Center)
+            row![
+                text_input("닉네임", &self.nickname)
+                    .on_input(Msg::SetNickname)
+                    .padding(6)
+                    .width(Length::Fixed(160.0)),
+                start_btn,
+            ].spacing(10).align_items(Alignment::Center)
         )
         .padding([10, 14])
         .style(iced::theme::Container::Custom(Box::new(WarnBadge)))

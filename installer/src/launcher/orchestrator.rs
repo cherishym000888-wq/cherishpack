@@ -365,6 +365,65 @@ async fn run_launch_only_inner(
     Ok(())
 }
 
+/// 오프라인(테스트 빌드) launch-only — MSA 건너뛰고 캐시된 닉네임으로 합성 계정.
+/// 바로가기 `-l` 클릭 시 호출. launch-cache 가 없으면 안내 후 종료.
+#[cfg(feature = "offline")]
+pub async fn run_launch_only_offline(
+    tx: tokio::sync::mpsc::UnboundedSender<Event>,
+) {
+    if let Err(e) = run_launch_only_offline_inner(&tx).await {
+        let _ = tx.send(Event::Error(format!("{e:#}")));
+    }
+}
+
+#[cfg(feature = "offline")]
+async fn run_launch_only_offline_inner(
+    tx: &tokio::sync::mpsc::UnboundedSender<Event>,
+) -> Result<()> {
+    let dirs = LauncherDirs::resolve()?;
+    let cache_entry = cache::load(&dirs.root)
+        .context("launch-cache 없음 — 먼저 GUI 에서 '시작' 으로 설치를 한번 실행하세요")?;
+    let nick = cache_entry.account.nickname.clone()
+        .filter(|s| !s.is_empty())
+        .context("캐시된 닉네임 없음 — GUI 에서 닉네임 입력 후 다시 시작")?;
+    let _ = tx.send(Event::Status(format!("Minecraft 실행 ({})", nick)));
+
+    let synth = auth::offline::synthesize(&nick);
+    let java_result = java::ensure_java_at(&dirs.java, &dirs.cache, None)
+        .await.context("Java 확인 실패")?;
+    let plan = libraries::plan(&cache_entry.final_meta, &dirs.libraries);
+    let is_vanilla_only = cache_entry.final_meta.id == cache_entry.vanilla_id;
+    let extra_classpath = if is_vanilla_only {
+        vec![dirs.client_jar(&cache_entry.vanilla_id)]
+    } else { Vec::new() };
+    let layout = RuntimeLayout {
+        dirs: &dirs,
+        version_id: &cache_entry.vanilla_id,
+        extra_classpath,
+    };
+    let uuid = synth.profile.uuid_dashed();
+    let account = run::Account {
+        username: &synth.profile.name,
+        uuid: &uuid,
+        access_token: &synth.mc_access_token,
+        user_type: "legacy",
+    };
+    let launcher_info = run::LauncherInfo {
+        name: "CherishWorld",
+        version: env!("CARGO_PKG_VERSION"),
+    };
+    let ctx = run::LaunchContext {
+        java: &java_result.javaw,
+        layout: &layout,
+        account: &account,
+        launcher: &launcher_info,
+    };
+    let status = run::run(&cache_entry.final_meta, &plan, &ctx).await?;
+    let _ = tx.send(Event::Info(format!("Minecraft 종료 (exit={})", status)));
+    let _ = tx.send(Event::Done { launched: true });
+    Ok(())
+}
+
 /// 원격 version.json 을 조회해 캐시보다 새 pack 이 있으면 경고 이벤트.
 /// 타임아웃 ~5초, 실패 시 조용히 넘어감. 런치 자체를 막지 않는다.
 async fn check_update_nonblocking(
