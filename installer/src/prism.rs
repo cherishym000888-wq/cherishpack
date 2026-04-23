@@ -273,6 +273,58 @@ pub fn write_default_options_if_missing(dirs: &AppDirs) -> Result<()> {
     Ok(())
 }
 
+/// instance.cfg 의 특정 key=value 를 set/update. 없으면 append, 있으면 교체.
+/// Prism 이 인스턴스를 사용 중이면 다음 실행 때 반영됨.
+pub fn set_instance_cfg_kv(dirs: &AppDirs, updates: &[(&str, &str)]) -> Result<()> {
+    let cfg_path = dirs.instance_root.join("instance.cfg");
+    let mut content = if cfg_path.exists() {
+        std::fs::read_to_string(&cfg_path).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    for (k, v) in updates {
+        let prefix = format!("{}=", k);
+        let new_line = format!("{}={}", k, v);
+        let mut lines: Vec<String> = content.lines().map(String::from).collect();
+        let mut found = false;
+        for line in &mut lines {
+            if line.starts_with(&prefix) {
+                *line = new_line.clone();
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            lines.push(new_line);
+        }
+        content = lines.join("\n");
+        if !content.ends_with('\n') {
+            content.push('\n');
+        }
+    }
+    std::fs::write(&cfg_path, content)?;
+    Ok(())
+}
+
+/// options.txt 에 `soundCategory_music:0.0` 설정 (덮어쓰기). 다른 카테고리는 건드리지 않음.
+pub fn mute_mc_music(dirs: &AppDirs) -> Result<()> {
+    let path = dirs.minecraft_root.join("options.txt");
+    let content = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut lines: Vec<String> = content.lines().map(String::from).collect();
+    let mut found = false;
+    for line in &mut lines {
+        if line.starts_with("soundCategory_music:") {
+            *line = "soundCategory_music:0.0".into();
+            found = true;
+        }
+    }
+    if !found {
+        lines.push("soundCategory_music:0.0".into());
+    }
+    std::fs::write(&path, lines.join("\n") + "\n")?;
+    Ok(())
+}
+
 /// 인스턴스 루트와 minecraft 폴더 준비.
 fn ensure_instance_dirs(dirs: &AppDirs) -> Result<()> {
     std::fs::create_dir_all(&dirs.minecraft_root)?;

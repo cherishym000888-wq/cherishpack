@@ -17,5 +17,4 @@ pub mod meta;
 pub mod natives;
 pub mod neoforge;
 pub mod orchestrator;
-pub mod patch_early_display;
 pub mod run;

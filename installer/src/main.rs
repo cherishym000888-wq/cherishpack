@@ -30,6 +30,8 @@ mod prism;
 mod shortcut;
 mod state;
 mod uninstall;
+mod boot_agent;
+mod patch_early_display;
 
 #[cfg(feature = "offline")]
 mod launcher;
@@ -52,6 +54,22 @@ fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|a| a == "--uninstall") {
         return uninstall::run(&dirs);
+    }
+
+    // 3.1 Prism PreLaunchCommand 훅 — NeoForge earlydisplay 핑크 패치 재적용.
+    //   `--patch-libs <libraries_dir>` 로 호출. Prism 이 게임 시작 전에 실행.
+    //   빠르게 끝나고 exit 0 반환 (Prism 이 이어서 게임 launch).
+    if let Some(idx) = args.iter().position(|a| a == "--patch-libs") {
+        let libs = args.get(idx + 1).cloned().unwrap_or_default();
+        if libs.is_empty() {
+            eprintln!("--patch-libs 인자에 libraries 경로 필요");
+            return Ok(());
+        }
+        match patch_early_display::apply_if_needed(std::path::Path::new(&libs)) {
+            Ok(_) => info!("earlydisplay 핑크 패치 확인/적용 완료"),
+            Err(e) => error!("earlydisplay 패치 실패 (게임 계속 진행): {e:#}"),
+        }
+        return Ok(());
     }
 
     // 3.5. (offline 빌드 한정) `--offline <nick>` — Prism 우회, 자체 런처로 헤드리스 실행.

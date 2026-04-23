@@ -119,27 +119,17 @@ pub fn build_command(
 
     // NeoForge earlydisplay jar 재패치 — 라이브러리 다운로드 시 sha1 검증으로
     // 롤백되므로 java 실행 직전 매번 확인 후 재적용.
-    if let Err(e) = super::patch_early_display::apply_if_needed(ctx.layout.libraries_dir()) {
+    if let Err(e) = crate::patch_early_display::apply_if_needed(ctx.layout.libraries_dir()) {
         tracing::warn!("earlydisplay 패치 실패 (계속 진행): {e:#}");
     }
 
     // options.txt 의 music volume 을 0 으로 — boot-agent BGM 과 겹치지 않게.
-    // 사운드·마스터 볼륨은 건드리지 않음 (효과음·환경음은 정상).
     mute_mc_music_if_needed(ctx.layout.dirs.instance.as_path());
 
-    // 부팅 BGM 재생 agent — JVM 인자로 -javaagent 추가 시 premain 이 main() 전에
-    // 실행되어 NeoForge 핑크 로딩 화면 초반부터 음악 시작.
-    // exe 에 embed 된 jar 를 매번 root 에 쓰기 (없거나 크기 다르면 갱신).
-    const AGENT_BYTES: &[u8] = include_bytes!("../../resources/boot-agent.jar");
+    // 부팅 BGM agent — exe 에 embed 된 jar 를 매번 root 에 배치.
     let agent_path = ctx.layout.dirs.root.join("boot-agent.jar");
-    let needs_write = !agent_path.exists()
-        || std::fs::metadata(&agent_path).map(|m| m.len() as usize != AGENT_BYTES.len()).unwrap_or(true);
-    if needs_write {
-        if let Err(e) = std::fs::write(&agent_path, AGENT_BYTES) {
-            tracing::warn!("boot-agent.jar 쓰기 실패: {e:#}");
-        } else {
-            tracing::info!("boot-agent.jar 배치 완료 ({}KB)", AGENT_BYTES.len() / 1024);
-        }
+    if let Err(e) = crate::boot_agent::ensure_installed(&agent_path) {
+        tracing::warn!("boot-agent 배치 실패: {e:#}");
     }
     if agent_path.exists() {
         jvm_args.insert(0, format!("-javaagent:{}", agent_path.display()));

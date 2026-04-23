@@ -259,6 +259,15 @@ async fn run_inner(
         Err(e) => warn_!("프리셋 적용 실패: {e:#}"),
     }
 
+    // 11.8. 체리쉬월드 부팅 경험 — 핑크 로딩화면 + 부팅 BGM + MC 자체음악 뮤트
+    //   (a) installer exe 복사 → Prism 의 PreLaunchCommand 로 재참조 (매 실행시 earlydisplay 재패치)
+    //   (b) boot-agent.jar 배치 → instance.cfg 의 JvmArgs 에 -javaagent 추가
+    //   (c) options.txt 의 music 카테고리 0.0 으로 뮤트
+    match install_cherish_boot_experience(dirs) {
+        Ok(_) => info!("체리쉬월드 부팅 경험(핑크 로딩·BGM·음악 뮤트) 구성 완료"),
+        Err(e) => warn_!("부팅 경험 구성 실패 (게임은 정상 작동): {e:#}"),
+    }
+
     // 12. Prism 실행
     if opts.auto_launch {
         status!("Prism 실행");
@@ -268,5 +277,47 @@ async fn run_inner(
         let _ = tx.send(Event::Done { launched: false });
     }
 
+    Ok(())
+}
+
+/// Prism 경로용 부팅 경험 설정.
+///   - installer exe 를 `<prism>/cherishworld.exe` 로 사본 (PreLaunchCommand 안정 참조)
+///   - boot-agent.jar 를 `<prism>/cherish-boot-agent.jar` 에 배치
+///   - instance.cfg 에 OverrideJavaArgs=true + JvmArgs=-javaagent + PreLaunchCommand 추가
+///   - options.txt 의 music 카테고리를 0.0 으로
+fn install_cherish_boot_experience(dirs: &crate::paths::AppDirs) -> Result<()> {
+    let exe_src = std::env::current_exe().context("current_exe 실패")?;
+    let exe_dst = dirs.prism_root.join("cherishworld.exe");
+    if exe_src != exe_dst {
+        std::fs::copy(&exe_src, &exe_dst)
+            .with_context(|| format!("installer 사본 복사 실패: {}", exe_dst.display()))?;
+    }
+
+    let agent_dst = dirs.prism_root.join("cherish-boot-agent.jar");
+    crate::boot_agent::ensure_installed(&agent_dst)?;
+
+    // Prism libraries 경로 — 공유 설치면 prism_root/libraries, 인스턴스 전용이면 instance_root/libraries
+    // Prism 은 기본적으로 `<prism>/libraries/` 에 공유.
+    let libs_dir = dirs.prism_root.join("libraries");
+
+    // 경로에 스페이스가 있을 수 있으니 반드시 따옴표로 감쌈.
+    let pre_launch_cmd = format!(
+        "\"{}\" --patch-libs \"{}\"",
+        exe_dst.display(),
+        libs_dir.display()
+    );
+    let jvm_args = format!("-javaagent:{}", agent_dst.display());
+
+    crate::prism::set_instance_cfg_kv(dirs, &[
+        ("OverrideJavaArgs", "true"),
+        ("JvmArgs", &jvm_args),
+        ("OverrideCommands", "true"),
+        ("PreLaunchCommand", &pre_launch_cmd),
+    ])?;
+
+    // MC 자체 music 뮤트 (자체 부팅 BGM 과 겹치지 않도록)
+    if let Err(e) = crate::prism::mute_mc_music(dirs) {
+        tracing::warn!("options.txt music 뮤트 실패: {e:#}");
+    }
     Ok(())
 }
