@@ -22,6 +22,7 @@ use anyhow::{anyhow, Result};
 use std::path::{Path, PathBuf};
 
 pub const APP_NAME: &str = "CherishWorld";
+pub const LAUNCHER_SUBDIR: &str = "launcher";
 
 #[derive(Debug, Clone)]
 pub struct LauncherDirs {
@@ -40,7 +41,8 @@ pub struct LauncherDirs {
 
 impl LauncherDirs {
     pub fn resolve() -> Result<Self> {
-        let base = local_appdata()?.join(APP_NAME);
+        // 통합 구조: %LOCALAPPDATA%\CherishWorld\launcher\  (구 CherishWorld\ 에서 이사됨)
+        let base = local_appdata()?.join(APP_NAME).join(LAUNCHER_SUBDIR);
         Ok(Self::at(base))
     }
 

@@ -31,6 +31,7 @@ mod shortcut;
 mod state;
 mod uninstall;
 mod boot_agent;
+mod migrate;
 mod patch_early_display;
 
 #[cfg(feature = "offline")]
@@ -40,7 +41,10 @@ use anyhow::Result;
 use tracing::{error, info};
 
 fn main() -> Result<()> {
-    // 1. 경로 준비 (%LOCALAPPDATA%\CherishPack\)
+    // 0. 구 레이아웃 이사 (CherishPack → CherishWorld, launcher 서브폴더 격리)
+    let _ = migrate::migrate();
+
+    // 1. 경로 준비 (%LOCALAPPDATA%\CherishWorld\)
     let dirs = paths::AppDirs::resolve()?;
     dirs.ensure_exists()?;
 

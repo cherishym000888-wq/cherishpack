@@ -144,6 +144,16 @@ pub fn build_command(
     jvm_args.retain(|a| a != "--demo");
     game_args.retain(|a| a != "--demo");
 
+    // ZGC 로 GC pause 최소화 — Java 21 generational ZGC.
+    // 기존 G1 관련 인자 제거 후 ZGC 인자 추가.
+    jvm_args.retain(|a|
+        !a.starts_with("-XX:+UseG1GC")
+        && !a.starts_with("-XX:+UseZGC")
+        && !a.starts_with("-XX:+ZGenerational")
+    );
+    jvm_args.push("-XX:+UseZGC".into());
+    jvm_args.push("-XX:+ZGenerational".into());
+
     let mut cmd = Command::new(ctx.java);
     cmd.current_dir(ctx.layout.game_dir());
     cmd.args(&jvm_args);

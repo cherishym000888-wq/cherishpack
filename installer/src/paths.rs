@@ -13,7 +13,8 @@ use anyhow::{anyhow, Result};
 use std::path::PathBuf;
 
 /// 앱 이름 — 폴더·레지스트리 키에 쓰인다.
-pub const APP_NAME: &str = "CherishPack";
+/// 통합 루트: %LOCALAPPDATA%\CherishWorld\ (구 CherishPack 에서 이사됨, 2026-04-25)
+pub const APP_NAME: &str = "CherishWorld";
 
 /// Prism 인스턴스 이름.
 pub const INSTANCE_NAME: &str = "cherishpack";
