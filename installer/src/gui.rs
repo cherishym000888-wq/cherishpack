@@ -203,11 +203,19 @@ async fn check_for_update() -> Option<String> {
 // ─────────────────────── 앱 구조체 ──────────────────────────
 
 pub fn run(dirs: AppDirs) -> Result<()> {
+    // 작업표시줄/창 아이콘 — iced 가 별도로 안 박으면 Windows 가 generic doc 으로 표시함.
+    // build.rs 의 winres exe 아이콘과 별개로 런타임 창에도 명시 지정 필요.
+    let icon = iced::window::icon::from_file_data(
+        include_bytes!("../assets/window_icon.png"),
+        None,
+    ).ok();
+
     App::run(Settings {
         id: None,
         window: iced::window::Settings {
             size: iced::Size::new(720.0, 520.0),
             resizable: false,
+            icon,
             ..iced::window::Settings::default()
         },
         flags: dirs,
