@@ -32,6 +32,7 @@ mod state;
 mod uninstall;
 mod boot_agent;
 mod migrate;
+mod options_fixup;
 mod patch_early_display;
 
 #[cfg(feature = "offline")]

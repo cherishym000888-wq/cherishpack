@@ -185,6 +185,12 @@ async fn run_inner(
     .await
     .context("mrpack 적용 실패")?;
 
+    // 8.5. options.txt 1회성 hotfix (알려진 키바인드 충돌 해소, 멱등)
+    if let Err(e) = crate::options_fixup::apply(&dirs.minecraft_root) {
+        // 실패해도 설치 자체는 성공시킴 — 단순 안전망
+        tracing::warn!(error = %e, "options.txt fixup 실패");
+    }
+
     // 9. 구 파일 정리 (4중 안전장치 + 휴지통)
     status!("구버전 파일 정리 중");
     let plan = patcher::prune_stale_files(
