@@ -19,10 +19,11 @@ use serde::Deserialize;
 use sha1::Sha1;
 use sha2::{Digest, Sha256, Sha512};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     io::Read,
     path::{Path, PathBuf},
     sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::io::AsyncWriteExt;
 
@@ -215,7 +216,109 @@ pub async fn apply(
         extract_overrides(&mut archive, prefix, minecraft_root, &mut files)?;
     }
 
+    // 6. orphan mod 정리 — 이번 mrpack 에 없는 jar 가 mods/ 에 남아있으면
+    //    mods_archive/{timestamp}/ 로 이동 (사용자가 임의 추가한 mod 도 보호 차원에서 삭제 X)
+    match cleanup_orphan_mods(minecraft_root, &files) {
+        Ok(moved) if moved > 0 => {
+            tracing::info!(count = moved, "orphan mod 정리 — mods_archive 로 이동");
+        }
+        Ok(_) => {}
+        Err(e) => {
+            // cleanup 실패는 mrpack 적용 자체를 실패시키지 않음 — 경고만
+            tracing::warn!(error = %e, "orphan mod 정리 중 일부 실패 (mrpack 적용은 완료)");
+        }
+    }
+
     Ok(AppliedPack { files })
+}
+
+/// 이번 mrpack 이 등록한 mods/*.jar 외의 잔여 jar 를 `mods_archive/{ts}/` 로 이동.
+///
+/// 사용자가 임의로 추가한 mod 도 함께 archive 로 이동되지만, 삭제는 하지 않으므로
+/// 사용자가 archive 폴더에서 수동 복구 가능.
+///
+/// `applied_files` 의 key 는 minecraft_root 기준 상대경로 ("mods/foo.jar" 형태).
+fn cleanup_orphan_mods(
+    minecraft_root: &Path,
+    applied_files: &HashMap<String, String>,
+) -> Result<usize> {
+    let mods_dir = minecraft_root.join("mods");
+    if !mods_dir.exists() || !mods_dir.is_dir() {
+        return Ok(0);
+    }
+
+    // 이번 mrpack 이 mods/ 직속에 깐 jar 파일명 set
+    let kept: HashSet<String> = applied_files
+        .keys()
+        .filter_map(|p| {
+            let normalized = p.replace('\\', "/");
+            normalized.strip_prefix("mods/").and_then(|name| {
+                if name.is_empty() || name.contains('/') {
+                    None // sub-directory 안의 파일은 mods 직속이 아님
+                } else {
+                    Some(name.to_string())
+                }
+            })
+        })
+        .collect();
+
+    // archive 디렉토리는 첫 orphan 발견 시 lazy 생성
+    let mut archive_dir: Option<PathBuf> = None;
+    let mut moved = 0usize;
+
+    for entry in std::fs::read_dir(&mods_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let fname = match entry.file_name().to_str() {
+            Some(s) => s.to_string(),
+            None => continue,
+        };
+        // .jar / .jar.disabled 만 대상 — config / readme 등은 보호
+        if !(fname.ends_with(".jar") || fname.ends_with(".jar.disabled")) {
+            continue;
+        }
+        // .disabled 인 경우 원래 이름과도 비교 (mrpack 이 .jar 로 등록했고 사용자가 .disabled 붙인 경우)
+        let base_name = fname
+            .strip_suffix(".disabled")
+            .unwrap_or(&fname)
+            .to_string();
+        if kept.contains(&fname) || kept.contains(&base_name) {
+            continue;
+        }
+
+        // orphan — mods_archive/{timestamp}/ 로 이동
+        if archive_dir.is_none() {
+            let ts = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let dir = minecraft_root
+                .join("mods_archive")
+                .join(format!("{ts}"));
+            std::fs::create_dir_all(&dir)
+                .with_context(|| format!("mods_archive 생성 실패: {}", dir.display()))?;
+            archive_dir = Some(dir);
+        }
+        let target = archive_dir.as_ref().unwrap().join(&fname);
+        match std::fs::rename(&path, &target) {
+            Ok(_) => {
+                tracing::info!(
+                    jar = %fname,
+                    archive = %target.display(),
+                    "orphan mod 이동"
+                );
+                moved += 1;
+            }
+            Err(e) => {
+                tracing::warn!(jar = %fname, error = %e, "orphan mod 이동 실패");
+            }
+        }
+    }
+
+    Ok(moved)
 }
 
 /// 상대경로 정화 — 절대경로·`..`·드라이브문자·역슬래시 제거.
