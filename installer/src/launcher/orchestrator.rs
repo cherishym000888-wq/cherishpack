@@ -257,9 +257,18 @@ async fn run_inner(
         launcher: &launcher_info,
     };
 
-    let status = run::run(&final_meta, &plan_full, &ctx).await?;
-    info!("Minecraft 종료 (exit={})", status);
+    // 게임 spawn 즉시 Done emit — 설치기는 "설치 완료" 화면으로 전환되고,
+    // 사용자가 직접 "종료" 버튼을 누를 때까지 유지된다.
+    // child.wait() 는 background 로 두고 게임 종료 시 로깅만 함.
+    let mut child = run::spawn(&final_meta, &plan_full, &ctx).await?;
+    info!("Minecraft 시작됨 — \"설치 완료\" 화면으로 전환");
     let _ = tx.send(Event::Done { launched: true });
+
+    // 백그라운드 wait — 게임 종료까지. 설치기 창은 이미 Done 화면이라 영향 없음.
+    match child.wait().await {
+        Ok(status) => info!("Minecraft 종료 (exit={})", status),
+        Err(e) => tracing::warn!("Minecraft wait 오류: {}", e),
+    }
     Ok(())
 }
 

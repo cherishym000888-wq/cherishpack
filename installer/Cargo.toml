@@ -1,6 +1,6 @@
 [package]
 name = "cherishpack-installer"
-version = "0.1.25"
+version = "0.1.26"
 edition = "2021"
 authors = ["CherishPack"]
 description = "CherishPack 모드팩 설치/패치/실행 부트스트래퍼"

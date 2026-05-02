@@ -180,40 +180,23 @@ pub async fn run(
     Ok(status)
 }
 
-/// 스폰 + 짧은 grace period 만 확인 후 즉시 반환 (background 로 둠).
+/// 자식 프로세스 spawn 만. wait 는 호출자가 자유롭게 처리.
 ///
-/// 게임이 5초 안에 종료되면 fast crash 로 간주해 Error 반환.
-/// 5초 살아있으면 정상 launch 로 간주하고 child 를 detach (drop) 후 Ok.
+/// 사용 흐름:
+///   1. spawn 으로 Child 받음
+///   2. 즉시 GUI 에 Done emit (설치기는 \"설치 완료\" 화면 전환)
+///   3. child.wait().await 로 백그라운드 종료 대기 (선택)
 ///
-/// 설치기가 게임 실행 후 자동 종료되도록 하기 위함 — `run` 처럼 게임 종료까지
-/// blocking 하면 설치기 창이 게임 플레이 내내 남아있게 됨.
-pub async fn launch(
+/// 설치기 창은 이미 \"설치 완료\" 상태라 사용자가 \"종료\" 버튼으로 닫을 수 있고,
+/// 게임은 별도 process 로 살아있다.
+pub async fn spawn(
     meta: &VersionMeta,
     plan: &LibraryPlan,
     ctx: &LaunchContext<'_>,
-) -> Result<()> {
+) -> Result<tokio::process::Child> {
     let mut cmd = build_command(meta, plan, ctx)?;
-    let mut child = cmd.spawn().context("java 프로세스 실행 실패")?;
-
-    // 5초 grace period — fast crash 감지
-    let grace = std::time::Duration::from_secs(5);
-    match tokio::time::timeout(grace, child.wait()).await {
-        Ok(Ok(status)) if status.success() => {
-            // grace 안에 정상 종료 (드문 케이스 — splash 만 잠깐 뜨는 mod 등)
-            tracing::info!("게임이 grace period 안에 정상 종료");
-            Ok(())
-        }
-        Ok(Ok(status)) => {
-            anyhow::bail!("게임이 빠르게 종료됨 (exit={status}) — crash 가능성");
-        }
-        Ok(Err(e)) => Err(anyhow::Error::from(e).context("프로세스 wait 오류")),
-        Err(_) => {
-            // 5초 timeout — 살아있음 = 정상 launch.
-            // child 는 drop 되면서 detach. tokio Child 는 drop 시 process kill 안 함.
-            tracing::info!("게임 정상 launch — 설치기는 종료 가능");
-            Ok(())
-        }
-    }
+    let child = cmd.spawn().context("java 프로세스 실행 실패")?;
+    Ok(child)
 }
 
 // ─────────────────────── 내부 ───────────────────────

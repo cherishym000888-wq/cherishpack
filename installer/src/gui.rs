@@ -324,20 +324,7 @@ impl Application for App {
             }
             Msg::Close          => iced::window::close(iced::window::Id::MAIN),
             Msg::UpdateCheck(n) => { self.update_notice = n; Command::none() }
-            Msg::Orc(ev)        => {
-                // 게임 launch 성공 (Done { launched: true }) 시 2초 후 자동으로 창 닫기.
-                // 게임이 background 에서 정상 동작하므로 설치기 창은 더 이상 필요 없음.
-                let auto_close = matches!(ev, OrcEvent::Done { launched: true });
-                self.apply_event(ev);
-                if auto_close {
-                    Command::perform(
-                        tokio::time::sleep(std::time::Duration::from_secs(2)),
-                        |_| Msg::Close,
-                    )
-                } else {
-                    Command::none()
-                }
-            }
+            Msg::Orc(ev)        => { self.apply_event(ev); Command::none() }
             #[cfg(feature = "offline")]
             Msg::SetNickname(s) => { self.nickname = s; Command::none() }
             #[cfg(feature = "offline")]
