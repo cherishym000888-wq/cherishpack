@@ -14,6 +14,8 @@ use std::path::Path;
 use crate::paths::AppDirs;
 
 pub struct PresetAssets<'a> {
+    /// 프리셋 키 ("low"/"medium"/"high"/"high_plus"/"verylow"). 분기에 사용.
+    pub key: &'static str,
     /// 예: "ComplementaryReimagined.zip" — None이면 쉐이더 OFF
     pub shader_pack: Option<&'a str>,
     /// 리소스팩 파일명(확장자 포함, 상대는 resourcepacks/ 폴더). 왼쪽이 최상위(아래덮음).
@@ -28,11 +30,12 @@ pub struct PresetAssets<'a> {
     pub memory_mb: u32,
 }
 
-/// 프리셋 이름("low"/"medium"/"high") → 실제 적용할 파일 세트.
+/// 프리셋 이름("low"/"medium"/"high"/"verylow") → 실제 적용할 파일 세트.
 pub fn preset_assets(preset: &str) -> PresetAssets<'static> {
     match preset {
         // 최고사양 — Rethinking Voxels + Faithful 64x
         "high_plus" => PresetAssets {
+            key: "high_plus",
             shader_pack: Some("RethinkingVoxels.zip"),
             resource_packs: vec!["cherishpack-ko.zip", "Faithful64x.zip"],
             render_distance: 12,
@@ -42,6 +45,7 @@ pub fn preset_assets(preset: &str) -> PresetAssets<'static> {
         },
         // 고사양 — Complementary Unbound + Faithful 64x
         "high" => PresetAssets {
+            key: "high",
             shader_pack: Some("ComplementaryUnbound.zip"),
             resource_packs: vec!["cherishpack-ko.zip", "Faithful64x.zip"],
             render_distance: 16,
@@ -51,6 +55,7 @@ pub fn preset_assets(preset: &str) -> PresetAssets<'static> {
         },
         // 중사양 — Complementary Reimagined + Faithful 64x
         "medium" => PresetAssets {
+            key: "medium",
             shader_pack: Some("ComplementaryReimagined.zip"),
             resource_packs: vec!["cherishpack-ko.zip", "Faithful64x.zip"],
             render_distance: 12,
@@ -58,8 +63,20 @@ pub fn preset_assets(preset: &str) -> PresetAssets<'static> {
             dh_chunks: 64,
             memory_mb: 6144,
         },
+        // VRAM 극절약 — Low 와 같은 자산이지만 추가 옵션으로 VRAM 사용을 최소화.
+        // 이미지 생성 모델 등과 공존하기 위한 내부 테스트 옵션.
+        "verylow" => PresetAssets {
+            key: "verylow",
+            shader_pack: None,
+            resource_packs: vec!["cherishpack-ko.zip", "BareBones.zip"],
+            render_distance: 4,
+            max_fps: 30,
+            dh_chunks: 0,
+            memory_mb: 4096,
+        },
         // 저사양 — BareBones, 쉐이더 OFF
         _ => PresetAssets {
+            key: "low",
             shader_pack: None,
             resource_packs: vec!["cherishpack-ko.zip", "BareBones.zip"],
             render_distance: 6,
@@ -125,8 +142,20 @@ fn apply_options_txt(mc_root: &Path, assets: &PresetAssets) -> Result<()> {
     set_line(&mut lines, "renderDistance", &assets.render_distance.to_string());
     set_line(&mut lines, "maxFps", &assets.max_fps.to_string());
 
+    // verylow — VRAM 극절약 추가 옵션 (다른 프리셋에는 영향 없음)
+    if assets.key == "verylow" {
+        set_line(&mut lines, "simulationDistance", "4");
+        set_line(&mut lines, "mipmapLevels", "0");      // 텍스처 LOD 없음 — VRAM 큰 절약
+        set_line(&mut lines, "particles", "2");          // Minimal
+        set_line(&mut lines, "biomeBlendRadius", "0");   // 바이옴 블렌딩 OFF
+        set_line(&mut lines, "graphicsMode", "0");       // Fast (vs Fancy)
+        set_line(&mut lines, "renderClouds", "false");
+        set_line(&mut lines, "entityShadows", "false");
+        set_line(&mut lines, "fancyGraphics", "false");  // legacy
+    }
+
     std::fs::write(&path, lines.join("\n") + "\n")?;
-    tracing::info!(path = %path.display(), "options.txt resourcePacks 갱신");
+    tracing::info!(path = %path.display(), preset = assets.key, "options.txt 갱신");
     Ok(())
 }
 

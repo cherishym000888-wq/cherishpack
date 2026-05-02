@@ -10,7 +10,7 @@
 //! 파싱해 processors 를 실행하고 필요한 patched jar 들을 생성하도록 맡긴다.
 //! 이렇게 하면 installer 가 하는 NeoForge 설치 로직을 Rust 로 재구현할 필요가 없다.
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
 use std::{io::Read, path::Path, process::Stdio};
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -205,9 +205,32 @@ pub async fn install_client(
 ) -> Result<()> {
     ensure_launcher_profiles(game_dir).await?;
 
+    // NeoForge installer 자체는 우리가 넘긴 java 로 실행되지만, installer 가
+    // 내부적으로 자식 java 프로세스를 spawn 할 때 시스템 PATH 의 java 를
+    // 사용하는 경우가 있다. 시스템 PATH 의 첫 java 가 Oracle Java 8 (구식)
+    // 이라면 NeoForge 21.x (Java 21 필요) 와 호환 안 되어 hang 발생.
+    // → JAVA_HOME 과 PATH 를 번들 JDK 21 으로 강제해 자식이 같은 java 를 쓰게 함.
+    let java_bin = java
+        .parent()
+        .ok_or_else(|| anyhow!("java 실행파일의 bin 디렉토리를 결정할 수 없음: {}", java.display()))?;
+    let java_home = java_bin
+        .parent()
+        .ok_or_else(|| anyhow!("java 의 home 디렉토리를 결정할 수 없음: {}", java_bin.display()))?;
+    let new_path = match std::env::var_os("PATH") {
+        Some(orig) => {
+            let mut s = std::ffi::OsString::from(java_bin);
+            s.push(";");
+            s.push(orig);
+            s
+        }
+        None => std::ffi::OsString::from(java_bin),
+    };
+
     tracing::info!(
         installer = %installer.display(),
         game_dir = %game_dir.display(),
+        java = %java.display(),
+        java_home = %java_home.display(),
         "NeoForge installer --installClient 실행",
     );
 
@@ -218,6 +241,8 @@ pub async fn install_client(
         .arg(game_dir)
         .current_dir(game_dir)
         .env("JAVA_TOOL_OPTIONS", "")
+        .env("JAVA_HOME", java_home)
+        .env("PATH", &new_path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

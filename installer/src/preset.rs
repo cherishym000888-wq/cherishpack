@@ -15,6 +15,10 @@ use crate::hwdetect::HwSnapshot;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Preset {
+    /// VRAM 극절약 — 이미지 생성 모델 등과 공존하기 위한 내부 테스트 옵션.
+    /// `verylow_preset` feature 가 켜진 빌드에서만 노출. 자동 추천되지 않음 (사용자 직접 선택).
+    #[cfg(feature = "verylow_preset")]
+    VeryLow,
     Low,
     Medium,
     High,
@@ -24,6 +28,8 @@ pub enum Preset {
 impl Preset {
     pub fn key(self) -> &'static str {
         match self {
+            #[cfg(feature = "verylow_preset")]
+            Preset::VeryLow => "verylow",
             Preset::Low => "low",
             Preset::Medium => "medium",
             Preset::High => "high",

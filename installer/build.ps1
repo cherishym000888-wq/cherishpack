@@ -52,8 +52,8 @@ Write-Host ("    → dist\CherishWorld.exe  ({0:N0} bytes / {1:N2} MB)" -f $size
 
 # ─────────────────────── 2) 테스트판 ─────────────────────
 Write-Host ''
-Write-Host "[2/2] 테스트판 빌드 (offline 포함) ..." -ForegroundColor Cyan
-cargo build --release --features offline
+Write-Host "[2/2] 테스트판 빌드 (offline + verylow_preset 포함) ..." -ForegroundColor Cyan
+cargo build --release --features "offline,verylow_preset"
 if ($LASTEXITCODE -ne 0) { throw "테스트판 빌드 실패" }
 
 Copy-Item (Join-Path $target 'CherishWorld.exe') (Join-Path $dist 'CherishWorld-test.exe') -Force

@@ -9,7 +9,7 @@ use anyhow::Result;
 use iced::{
     executor,
     widget::{
-        button, column, container, progress_bar, row, scrollable, text, text_input, Space,
+        button, column, container, progress_bar, row, scrollable, text, text_input, Row, Space,
     },
     Alignment, Application, Background, Border, Color, Command, Element, Length, Settings,
     Shadow, Subscription, Theme, Vector,
@@ -489,12 +489,20 @@ impl App {
 
             column![
                 text("그래픽 품질").size(12).style(TEXT_MUTED),
-                row![
-                    mk_preset_btn("LOW",    "쉐이더 OFF",    Preset::Low),
-                    mk_preset_btn("MEDIUM", "C. Reimagined", Preset::Medium),
-                    mk_preset_btn("HIGH",   "C. Unbound",    Preset::High),
-                    mk_preset_btn("HIGH++", "Reth. Voxels",  Preset::HighPlus),
-                ].spacing(8).width(Length::Fill),
+                {
+                    // row! 매크로는 인자 안에 #[cfg(...)] 를 받지 못해
+                    // Row builder 로 직접 조립한다.
+                    let mut r: Row<'_, Msg> = Row::new();
+                    #[cfg(feature = "verylow_preset")]
+                    {
+                        r = r.push(mk_preset_btn("V.LOW", "VRAM 극절약", Preset::VeryLow));
+                    }
+                    r = r.push(mk_preset_btn("LOW",    "쉐이더 OFF",    Preset::Low));
+                    r = r.push(mk_preset_btn("MEDIUM", "C. Reimagined", Preset::Medium));
+                    r = r.push(mk_preset_btn("HIGH",   "C. Unbound",    Preset::High));
+                    r = r.push(mk_preset_btn("HIGH++", "Reth. Voxels",  Preset::HighPlus));
+                    r.spacing(8).width(Length::Fill)
+                },
             ].spacing(8).align_items(Alignment::Center).width(Length::Fill),
 
             Space::with_height(4),
