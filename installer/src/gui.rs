@@ -1,19 +1,29 @@
 //! iced GUI — CherishPack 설치 프로그램
 //!
 //! 화면: Welcome → Installing → Done / Error
-//! 디자인: 체리쉬 웹 다크 네이비 테마
-//!   배경 #0e1020 / 패널 #10172a / 보더 #243047
-//!   포인트 #f43f5e (체리 핑크) / 버튼 #1a2946 + #5e7ab1
+//! 디자인: 분홍 파스텔 라이트 테마
+//!   배경 #fff4f7 / 패널 #ffffff / 보더 #f8bbd0
+//!   포인트 #f43f5e (체리 핑크) — 텍스트 #4a1d2e
 
 use anyhow::Result;
 use iced::{
     executor,
+    font::{Family, Stretch, Style, Weight},
     widget::{
-        button, column, container, horizontal_rule, progress_bar, row, scrollable, text,
-        text_input, Row, Space,
+        button, column, container, progress_bar, row, scrollable, text, text_input, Row, Space,
     },
-    Alignment, Application, Background, Border, Color, Command, Element, Length, Settings,
+    Alignment, Application, Background, Border, Color, Command, Element, Font, Length, Settings,
     Shadow, Subscription, Theme, Vector,
+};
+
+/// 임베드한 Cafe24 Ssurround 폰트는 Bold weight (usWeightClass=700) 로만 들어있다.
+/// `Font::with_name()` 은 default weight (Normal=400) 라 매칭 실패해서 한글이 깨진다 —
+/// weight=Bold 명시한 const 를 default 로 사용해야 한다.
+const APP_FONT: Font = Font {
+    family: Family::Name("Cafe24 Ssurround"),
+    weight: Weight::Bold,
+    stretch: Stretch::Normal,
+    style: Style::Normal,
 };
 use std::sync::{Arc, Mutex};
 
@@ -30,18 +40,18 @@ use crate::{
 
 // ─────────────────────── 색상 팔레트 ────────────────────────
 
-const BG:          Color = Color { r: 0.055, g: 0.063, b: 0.125, a: 1.0 }; // #0e1020
-const PANEL:       Color = Color { r: 0.063, g: 0.090, b: 0.165, a: 1.0 }; // #10172a
-const PANEL2:      Color = Color { r: 0.102, g: 0.161, b: 0.275, a: 1.0 }; // #1a2946
-const BORDER:      Color = Color { r: 0.141, g: 0.188, b: 0.278, a: 1.0 }; // #243047
-const BORDER2:     Color = Color { r: 0.369, g: 0.478, b: 0.694, a: 1.0 }; // #5e7ab1
-const TEXT:        Color = Color { r: 0.953, g: 0.965, b: 1.000, a: 1.0 }; // #f3f6ff
-const TEXT_MUTED:  Color = Color { r: 0.624, g: 0.702, b: 0.851, a: 1.0 }; // #9fb3d9
-const CHERRY:      Color = Color { r: 0.957, g: 0.247, b: 0.369, a: 1.0 }; // #f43f5e
+const BG:          Color = Color { r: 1.000, g: 0.957, b: 0.969, a: 1.0 }; // #fff4f7  분홍 파스텔 배경
+const PANEL:       Color = Color { r: 1.000, g: 1.000, b: 1.000, a: 1.0 }; // #ffffff  흰 카드
+const PANEL2:      Color = Color { r: 0.988, g: 0.894, b: 0.925, a: 1.0 }; // #fce4ec
+const BORDER:      Color = Color { r: 0.973, g: 0.733, b: 0.816, a: 1.0 }; // #f8bbd0
+const BORDER2:     Color = Color { r: 0.957, g: 0.561, b: 0.694, a: 1.0 }; // #f48fb1
+const TEXT:        Color = Color { r: 0.290, g: 0.114, b: 0.180, a: 1.0 }; // #4a1d2e  진한 분홍 갈
+const TEXT_MUTED:  Color = Color { r: 0.545, g: 0.380, b: 0.471, a: 1.0 }; // #8b6178
+const CHERRY:      Color = Color { r: 0.957, g: 0.247, b: 0.369, a: 1.0 }; // #f43f5e (포인트 유지)
 const CHERRY_DARK: Color = Color { r: 0.882, g: 0.114, b: 0.282, a: 1.0 }; // #e11d48
-const SUCCESS:     Color = Color { r: 0.392, g: 0.863, b: 0.545, a: 1.0 }; // #64dc8b
-const WARN:        Color = Color { r: 1.000, g: 0.878, b: 0.541, a: 1.0 }; // #ffe08a
-const LOG_BG:      Color = Color { r: 0.031, g: 0.047, b: 0.094, a: 1.0 }; // #080c18
+const SUCCESS:     Color = Color { r: 0.957, g: 0.247, b: 0.369, a: 1.0 }; // #f43f5e  CHERRY 와 동일 (브랜드 통일, 라이트 테마에서 녹색이 촌스러워서 변경)
+const WARN:        Color = Color { r: 0.612, g: 0.376, b: 0.000, a: 1.0 }; // #9c6000  진한 호박색
+const LOG_BG:      Color = Color { r: 0.988, g: 0.937, b: 0.957, a: 1.0 }; // #fcf0f4
 
 // ─────────────────────── 스타일시트 구조체 ─────────────────────
 
@@ -58,7 +68,7 @@ impl container::StyleSheet for BgStyle {
     }
 }
 
-/// 카드 패널 (보더 + 그림자)
+/// 카드 패널 (보더 + 그림자) — 라이트 테마용 옅은 그림자
 struct CardStyle;
 impl container::StyleSheet for CardStyle {
     type Style = Theme;
@@ -68,35 +78,35 @@ impl container::StyleSheet for CardStyle {
             text_color: Some(TEXT),
             border: Border { color: BORDER, width: 1.0, radius: 12.0.into() },
             shadow: Shadow {
-                color: Color { r: 0.882, g: 0.114, b: 0.282, a: 0.10 },
-                offset: Vector::new(0.0, 4.0),
-                blur_radius: 20.0,
+                color: Color { r: 0.957, g: 0.247, b: 0.369, a: 0.12 }, // 옅은 분홍 그림자
+                offset: Vector::new(0.0, 3.0),
+                blur_radius: 14.0,
             },
         }
     }
 }
 
-/// 로그/코드 배경
+/// 로그/코드 배경 — 라이트 톤에 맞춰 옅은 분홍 박스
 struct LogStyle;
 impl container::StyleSheet for LogStyle {
     type Style = Theme;
     fn appearance(&self, _: &Theme) -> container::Appearance {
         container::Appearance {
             background: Some(Background::Color(LOG_BG)),
-            text_color: Some(TEXT_MUTED),
+            text_color: Some(TEXT),
             border: Border { color: BORDER, width: 1.0, radius: 8.0.into() },
             ..Default::default()
         }
     }
 }
 
-/// 경고 배지
+/// 경고 배지 — 라이트 배경 위에 어두운 호박색
 struct WarnBadge;
 impl container::StyleSheet for WarnBadge {
     type Style = Theme;
     fn appearance(&self, _: &Theme) -> container::Appearance {
         container::Appearance {
-            background: Some(Background::Color(Color { r: 0.4, g: 0.3, b: 0.0, a: 0.20 })),
+            background: Some(Background::Color(Color { r: 1.0, g: 0.945, b: 0.812, a: 1.0 })), // #fff1cf
             text_color: Some(WARN),
             border: Border { color: WARN, width: 1.0, radius: 6.0.into() },
             ..Default::default()
@@ -104,13 +114,13 @@ impl container::StyleSheet for WarnBadge {
     }
 }
 
-/// 일반 버튼 (어두운 네이비)
+/// 일반 버튼 — 라이트 테마: 흰 배경 + 분홍 보더 + 진한 텍스트
 struct BtnNormal;
 impl button::StyleSheet for BtnNormal {
     type Style = Theme;
     fn active(&self, _: &Theme) -> button::Appearance {
         button::Appearance {
-            background: Some(Background::Color(Color { r: 0.075, g: 0.118, b: 0.208, a: 1.0 })),
+            background: Some(Background::Color(PANEL)),
             text_color: TEXT,
             border: Border { color: BORDER, width: 1.0, radius: 8.0.into() },
             ..Default::default()
@@ -175,47 +185,15 @@ impl button::StyleSheet for BtnPrimary {
     }
 }
 
-/// 진행바 — 체리 핑크
+/// 진행바 — 트랙은 옅은 분홍, 바는 체리 핑크
 struct ProgressStyle;
 impl progress_bar::StyleSheet for ProgressStyle {
     type Style = Theme;
     fn appearance(&self, _: &Theme) -> progress_bar::Appearance {
         progress_bar::Appearance {
-            background: Background::Color(BORDER),
+            background: Background::Color(PANEL2),
             bar: Background::Color(CHERRY),
             border_radius: 4.0.into(),
-        }
-    }
-}
-
-/// 헤더 카드 — Welcome 의 타이틀 영역을 살짝 띄워서 시각 위계 강화
-struct HeaderCard;
-impl container::StyleSheet for HeaderCard {
-    type Style = Theme;
-    fn appearance(&self, _: &Theme) -> container::Appearance {
-        container::Appearance {
-            background: Some(Background::Color(Color { r: 0.075, g: 0.110, b: 0.200, a: 1.0 })),
-            text_color: Some(TEXT),
-            border: Border { color: BORDER, width: 1.0, radius: 14.0.into() },
-            shadow: Shadow {
-                color: Color { r: 0.957, g: 0.247, b: 0.369, a: 0.18 },
-                offset: Vector::new(0.0, 6.0),
-                blur_radius: 24.0,
-            },
-        }
-    }
-}
-
-/// horizontal_rule 색을 체리 핑크로
-struct CherryRule;
-impl iced::widget::rule::StyleSheet for CherryRule {
-    type Style = Theme;
-    fn appearance(&self, _: &Theme) -> iced::widget::rule::Appearance {
-        iced::widget::rule::Appearance {
-            color: CHERRY,
-            width: 2,
-            radius: 1.0.into(),
-            fill_mode: iced::widget::rule::FillMode::Padded(0),
         }
     }
 }
@@ -252,8 +230,10 @@ pub fn run(dirs: AppDirs) -> Result<()> {
             ..iced::window::Settings::default()
         },
         flags: dirs,
-        fonts: Vec::new(),
-        default_font: iced::Font::with_name("Malgun Gothic"),
+        // 마인크래프트 클라가 쓰는 Cafe24 Ssurround 폰트 임베드 → exe 내장.
+        // Bold weight 만 들어있으므로 APP_FONT (Bold 명시) 사용.
+        fonts: vec![include_bytes!("../assets/cafe24ssurround.ttf").as_slice().into()],
+        default_font: APP_FONT,
         default_text_size: iced::Pixels(14.0),
         antialiasing: true,
     })
@@ -513,53 +493,38 @@ impl App {
             Space::with_height(0).into()
         };
 
-        // ── 헤더 카드 — 타이틀 + 부제 + 체리 가로선
-        let header = container(
-            column![
-                text("CHERISH").size(48).style(CHERRY),
-                text("CherishWorld").size(11).style(TEXT_MUTED),
-                Space::with_height(10),
-                container(
-                    horizontal_rule(2)
-                        .style(iced::theme::Rule::Custom(Box::new(CherryRule)))
-                )
-                .width(Length::Fixed(60.0)),
-                Space::with_height(8),
-                text("Minecraft NeoForge 1.21.1 Modpack").size(10).style(TEXT_MUTED),
-            ].spacing(0).align_items(Alignment::Center)
-        )
-        .padding([22, 32])
-        .width(Length::Fill)
-        .style(iced::theme::Container::Custom(Box::new(HeaderCard)));
-
         // ── HW 정보 카드 ──
         let hw_card = container(
             column![
                 row![
                     text("RAM").size(11).style(TEXT_MUTED),
                     text(format!("{:.1} GB", ram_gb)).size(11).style(TEXT),
-                    Space::with_width(20),
+                    Space::with_width(16),
                     text("GPU").size(11).style(TEXT_MUTED),
                     text(&gpu).size(11).style(TEXT),
-                    Space::with_width(20),
+                    Space::with_width(16),
                     text("VRAM").size(11).style(TEXT_MUTED),
                     text(&vram).size(11).style(TEXT),
-                ].spacing(7).align_items(Alignment::Center),
-                text(format!("추천 프리셋  ·  {}", preset::recommend(&self.hw).key().to_uppercase()))
+                ].spacing(6).align_items(Alignment::Center),
+                text(format!("추천 프리셋: {}", preset::recommend(&self.hw).key().to_uppercase()))
                     .size(11).style(TEXT_MUTED),
-            ].spacing(6)
+            ].spacing(4)
         )
-        .padding([14, 22])
+        .padding([10, 16])
         .style(iced::theme::Container::Custom(Box::new(CardStyle)));
 
         // ── 전체 레이아웃 ──
         let content = column![
-            header,
+            column![
+                text("CHERISH").size(36).style(CHERRY),
+                text("Minecraft NeoForge 1.21.1 모드팩").size(12).style(TEXT_MUTED),
+            ].spacing(2).align_items(Alignment::Center),
+
             update_row,
             hw_card,
 
             column![
-                text("GRAPHICS PRESET").size(11).style(TEXT_MUTED),
+                text("그래픽 품질").size(12).style(TEXT_MUTED),
                 {
                     // row! 매크로는 인자 안에 #[cfg(...)] 를 받지 못해
                     // Row builder 로 직접 조립한다.
@@ -574,24 +539,24 @@ impl App {
                     r = r.push(mk_preset_btn("HIGH++", "Reth. Voxels",  Preset::HighPlus));
                     r.spacing(8).width(Length::Fill)
                 },
-            ].spacing(10).align_items(Alignment::Center).width(Length::Fill),
+            ].spacing(8).align_items(Alignment::Center).width(Length::Fill),
 
-            Space::with_height(6),
+            Space::with_height(4),
 
             row![
-                button(text("  설치 / 업데이트  ").size(15))
+                button(text("  설치 / 업데이트  ").size(14))
                     .on_press(Msg::StartInstall)
                     .style(iced::theme::Button::Custom(Box::new(BtnPrimary)))
-                    .padding([12, 28]),
+                    .padding([10, 22]),
                 button(text("닫기").size(14))
                     .on_press(Msg::Close)
                     .style(iced::theme::Button::Custom(Box::new(BtnNormal)))
-                    .padding([12, 18]),
+                    .padding([10, 16]),
             ].spacing(12),
 
             self.view_offline_panel(),
         ]
-        .spacing(16)
+        .spacing(14)
         .align_items(Alignment::Center)
         .max_width(640);
 
@@ -792,7 +757,7 @@ impl App {
             scrollable(
                 container(
                     text(err).size(12)
-                        .font(iced::Font::with_name("Malgun Gothic"))
+                        .font(APP_FONT)
                         .style(TEXT)
                 )
                 .padding(12)
@@ -813,7 +778,7 @@ impl App {
                     scrollable(
                         container(
                             text(&step_log_joined).size(11)
-                                .font(iced::Font::with_name("Malgun Gothic"))
+                                .font(APP_FONT)
                                 .style(TEXT_MUTED)
                         )
                         .padding(12)
