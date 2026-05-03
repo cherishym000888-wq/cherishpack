@@ -1,0 +1,33 @@
+{
+  "pack_version": "0.6.30",
+  "released_at": "2026-05-03T17:55:32Z",
+  "minecraft": "1.21.1",
+  "loader": {
+    "type": "neoforge",
+    "version": "21.1.220"
+  },
+  "mrpack_url": "https://github.com/cherishym000888-wq/cherishpack/releases/download/v0.6.30/cherishpack-0.6.30.mrpack",
+  "mrpack_sha256": "f2eeb784f3f535bcf47222abf6e107588699417a76ab3276a330a2995da18d7f",
+  "preserve": [
+    "options.txt",
+    "optionsof.txt",
+    "optionsshaders.txt",
+    "servers.dat",
+    "servers.dat_old",
+    "saves/**",
+    "screenshots/**",
+    "logs/**",
+    "crash-reports/**",
+    "resourcepacks/user/**",
+    "config/iris.properties",
+    "config/distanthorizons.toml"
+  ],
+  "overwrite_policy": {},
+  "hw_profiles": {
+    "low":        { "shaders": null,                              "resourcepack": "BareBones.zip",   "ram_mb": 4096  },
+    "medium":     { "shaders": "ComplementaryReimagined.zip",   "resourcepack": "Faithful64x.zip", "ram_mb": 6144  },
+    "high":       { "shaders": "ComplementaryUnbound.zip",      "resourcepack": "Faithful64x.zip", "ram_mb": 8192  },
+    "high_plus":  { "shaders": "RethinkingVoxels.zip",          "resourcepack": "Faithful64x.zip", "ram_mb": 12288 }
+  },
+  "min_installer_version": "0.1.19"
+}
