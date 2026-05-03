@@ -9,7 +9,8 @@ use anyhow::Result;
 use iced::{
     executor,
     widget::{
-        button, column, container, progress_bar, row, scrollable, text, text_input, Row, Space,
+        button, column, container, horizontal_rule, progress_bar, row, scrollable, text,
+        text_input, Row, Space,
     },
     Alignment, Application, Background, Border, Color, Command, Element, Length, Settings,
     Shadow, Subscription, Theme, Vector,
@@ -187,6 +188,38 @@ impl progress_bar::StyleSheet for ProgressStyle {
     }
 }
 
+/// 헤더 카드 — Welcome 의 타이틀 영역을 살짝 띄워서 시각 위계 강화
+struct HeaderCard;
+impl container::StyleSheet for HeaderCard {
+    type Style = Theme;
+    fn appearance(&self, _: &Theme) -> container::Appearance {
+        container::Appearance {
+            background: Some(Background::Color(Color { r: 0.075, g: 0.110, b: 0.200, a: 1.0 })),
+            text_color: Some(TEXT),
+            border: Border { color: BORDER, width: 1.0, radius: 14.0.into() },
+            shadow: Shadow {
+                color: Color { r: 0.957, g: 0.247, b: 0.369, a: 0.18 },
+                offset: Vector::new(0.0, 6.0),
+                blur_radius: 24.0,
+            },
+        }
+    }
+}
+
+/// horizontal_rule 색을 체리 핑크로
+struct CherryRule;
+impl iced::widget::rule::StyleSheet for CherryRule {
+    type Style = Theme;
+    fn appearance(&self, _: &Theme) -> iced::widget::rule::Appearance {
+        iced::widget::rule::Appearance {
+            color: CHERRY,
+            width: 2,
+            radius: 1.0.into(),
+            fill_mode: iced::widget::rule::FillMode::Padded(0),
+        }
+    }
+}
+
 // ─────────────────────── 업데이트 체크 ──────────────────────
 
 async fn check_for_update() -> Option<String> {
@@ -239,6 +272,11 @@ struct App {
     substep_label: String,
     substep_idx: usize,
     substep_total: usize,
+    /// 현재 큰 단계 이름 (Status 이벤트로 갱신).
+    /// 멈췄을 때 어느 단계에서 멈췄는지 알리는 용도.
+    current_step_label: String,
+    /// 현재 단계 진입 후 발생한 메시지들. 단계가 바뀌면 자동 clear.
+    /// 정상 진행 중에는 화면에 표시 안 하고, Error 화면에서만 노출.
     log_lines: Vec<String>,
     rx: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<OrcEvent>>>>,
     #[cfg(feature = "offline")]
@@ -288,6 +326,7 @@ impl Application for App {
                 substep_label: String::new(),
                 substep_idx: 0,
                 substep_total: 0,
+                current_step_label: String::new(),
                 log_lines: Vec::new(),
                 rx: Arc::new(Mutex::new(None)),
                 #[cfg(feature = "offline")]
@@ -400,13 +439,30 @@ impl Application for App {
 impl App {
     fn apply_event(&mut self, ev: OrcEvent) {
         match ev {
-            OrcEvent::Status(s)                      => { self.progress_label = s.clone(); self.push_log(format!("[*] {s}")); }
-            OrcEvent::Progress { done, total, label } => { self.progress_done = done; self.progress_total = total; self.progress_label = label; }
-            OrcEvent::SubStep { idx, total, label }  => { self.substep_idx = idx; self.substep_total = total; self.substep_label = label; }
-            OrcEvent::Info(s)                        => { if !s.is_empty() { self.push_log(format!("    {s}")); } }
-            OrcEvent::Warn(s)                        => { self.push_log(format!("[!] {s}")); }
-            OrcEvent::Done { launched }              => { self.push_log("[v] 완료".into()); self.screen = Screen::Done { launched }; }
-            OrcEvent::Error(e)                       => { self.push_log(format!("[x] {e}")); self.screen = Screen::Error(e); }
+            // Status = 큰 단계 경계. 단계 바뀌면 이전 단계 로그/서브 모두 리셋해서
+            // Installing 화면이 깨끗하게 갱신되고, Error 화면에서는 마지막 단계의 메시지만 보이게 한다.
+            OrcEvent::Status(s) => {
+                self.current_step_label = s.clone();
+                self.progress_label = s;
+                self.substep_idx = 0;
+                self.substep_total = 0;
+                self.substep_label.clear();
+                self.log_lines.clear();
+            }
+            OrcEvent::Progress { done, total, label } => {
+                self.progress_done = done;
+                self.progress_total = total;
+                self.progress_label = label;
+            }
+            OrcEvent::SubStep { idx, total, label } => {
+                self.substep_idx = idx;
+                self.substep_total = total;
+                self.substep_label = label;
+            }
+            OrcEvent::Info(s) => { if !s.is_empty() { self.push_log(s); } }
+            OrcEvent::Warn(s) => { self.push_log(format!("[!] {s}")); }
+            OrcEvent::Done { launched } => { self.screen = Screen::Done { launched }; }
+            OrcEvent::Error(e) => { self.push_log(format!("[x] {e}")); self.screen = Screen::Error(e); }
         }
     }
 
@@ -457,38 +513,53 @@ impl App {
             Space::with_height(0).into()
         };
 
+        // ── 헤더 카드 — 타이틀 + 부제 + 체리 가로선
+        let header = container(
+            column![
+                text("CHERISH").size(48).style(CHERRY),
+                text("CherishWorld").size(11).style(TEXT_MUTED),
+                Space::with_height(10),
+                container(
+                    horizontal_rule(2)
+                        .style(iced::theme::Rule::Custom(Box::new(CherryRule)))
+                )
+                .width(Length::Fixed(60.0)),
+                Space::with_height(8),
+                text("Minecraft NeoForge 1.21.1 Modpack").size(10).style(TEXT_MUTED),
+            ].spacing(0).align_items(Alignment::Center)
+        )
+        .padding([22, 32])
+        .width(Length::Fill)
+        .style(iced::theme::Container::Custom(Box::new(HeaderCard)));
+
         // ── HW 정보 카드 ──
         let hw_card = container(
             column![
                 row![
                     text("RAM").size(11).style(TEXT_MUTED),
                     text(format!("{:.1} GB", ram_gb)).size(11).style(TEXT),
-                    Space::with_width(16),
+                    Space::with_width(20),
                     text("GPU").size(11).style(TEXT_MUTED),
                     text(&gpu).size(11).style(TEXT),
-                    Space::with_width(16),
+                    Space::with_width(20),
                     text("VRAM").size(11).style(TEXT_MUTED),
                     text(&vram).size(11).style(TEXT),
-                ].spacing(6).align_items(Alignment::Center),
-                text(format!("추천 프리셋: {}", preset::recommend(&self.hw).key().to_uppercase()))
+                ].spacing(7).align_items(Alignment::Center),
+                text(format!("추천 프리셋  ·  {}", preset::recommend(&self.hw).key().to_uppercase()))
                     .size(11).style(TEXT_MUTED),
-            ].spacing(4)
+            ].spacing(6)
         )
-        .padding([10, 16])
+        .padding([14, 22])
         .style(iced::theme::Container::Custom(Box::new(CardStyle)));
 
         // ── 전체 레이아웃 ──
         let content = column![
-            column![
-                text("CHERISH").size(36).style(CHERRY),
-                text("Minecraft NeoForge 1.21.1 모드팩").size(12).style(TEXT_MUTED),
-            ].spacing(2).align_items(Alignment::Center),
-
+            header,
             update_row,
             hw_card,
 
             column![
-                text("그래픽 품질").size(12).style(TEXT_MUTED),
+                text("GRAPHICS PRESET").size(11).style(TEXT_MUTED),
                 {
                     // row! 매크로는 인자 안에 #[cfg(...)] 를 받지 못해
                     // Row builder 로 직접 조립한다.
@@ -503,24 +574,24 @@ impl App {
                     r = r.push(mk_preset_btn("HIGH++", "Reth. Voxels",  Preset::HighPlus));
                     r.spacing(8).width(Length::Fill)
                 },
-            ].spacing(8).align_items(Alignment::Center).width(Length::Fill),
+            ].spacing(10).align_items(Alignment::Center).width(Length::Fill),
 
-            Space::with_height(4),
+            Space::with_height(6),
 
             row![
-                button(text("  설치 / 업데이트  ").size(14))
+                button(text("  설치 / 업데이트  ").size(15))
                     .on_press(Msg::StartInstall)
                     .style(iced::theme::Button::Custom(Box::new(BtnPrimary)))
-                    .padding([10, 22]),
+                    .padding([12, 28]),
                 button(text("닫기").size(14))
                     .on_press(Msg::Close)
                     .style(iced::theme::Button::Custom(Box::new(BtnNormal)))
-                    .padding([10, 16]),
+                    .padding([12, 18]),
             ].spacing(12),
 
             self.view_offline_panel(),
         ]
-        .spacing(14)
+        .spacing(16)
         .align_items(Alignment::Center)
         .max_width(640);
 
@@ -575,52 +646,64 @@ impl App {
             Some(t) if t > 0 => (self.progress_done as f32 / t as f32).clamp(0.0, 1.0),
             _ => 0.0,
         };
-        let sub = if self.substep_total > 0 {
-            format!("[{}/{}]  {}", self.substep_idx, self.substep_total, self.substep_label)
-        } else { String::new() };
+        let pct_int = (pct * 100.0).round() as u32;
 
-        let log_text = self.log_lines.join("\n");
+        // 메인 단계명 (Status 로 들어온 가장 최근 큰 단계).
+        // 시작 직후엔 비어있을 수 있으니 progress_label 로 폴백.
+        let step_main = if !self.current_step_label.is_empty() {
+            self.current_step_label.clone()
+        } else {
+            self.progress_label.clone()
+        };
+
+        // 서브 라인 — substep([idx/total] label) 우선, 없으면 progress_label 이 단계명과 다를 때만.
+        let sub_line = if self.substep_total > 0 {
+            format!("{} / {}  ·  {}", self.substep_idx, self.substep_total, self.substep_label)
+        } else if !self.progress_label.is_empty() && self.progress_label != step_main {
+            self.progress_label.clone()
+        } else {
+            String::new()
+        };
 
         let content = column![
-            column![
-                text("설치 / 업데이트 중").size(24).style(CHERRY),
-                text(&self.progress_label).size(13).style(TEXT),
-            ].spacing(4),
+            Space::with_height(Length::Fill),
 
-            column![
+            // 헤더 라벨 — 작게
+            text("설치 / 업데이트 중").size(11).style(TEXT_MUTED),
+            Space::with_height(4),
+
+            // 큰 percentage
+            text(format!("{}%", pct_int)).size(72).style(CHERRY),
+
+            Space::with_height(18),
+
+            // progress bar
+            container(
                 progress_bar(0.0..=1.0, pct)
                     .style(iced::theme::ProgressBar::Custom(Box::new(ProgressStyle)))
-                    .height(8),
-                row![
-                    text(&sub).size(11).style(TEXT_MUTED),
-                    Space::with_width(Length::Fill),
-                    text(format!("{:.0}%", pct * 100.0)).size(11).style(CHERRY),
-                ],
-            ].spacing(4),
-
-            container(
-                scrollable(
-                    container(
-                        text(log_text).size(11)
-                            .font(iced::Font::with_name("Malgun Gothic"))
-                            .style(TEXT_MUTED)
-                    )
-                    .padding(12)
-                    .width(Length::Fill)
-                )
-                .height(Length::Fixed(300.0))
+                    .height(10)
             )
-            .style(iced::theme::Container::Custom(Box::new(LogStyle)))
-            .width(Length::Fill),
+            .width(Length::Fixed(440.0)),
+
+            Space::with_height(22),
+
+            // 단계명 (큰 글씨)
+            text(&step_main).size(18).style(TEXT),
+
+            // 서브 라인 (있을 때만)
+            text(&sub_line).size(12).style(TEXT_MUTED),
+
+            Space::with_height(Length::Fill),
         ]
-        .spacing(16)
+        .spacing(0)
+        .align_items(Alignment::Center)
         .width(Length::Fill);
 
         container(
             container(content)
                 .width(Length::Fill)
                 .height(Length::Fill)
-                .padding(28)
+                .padding(40)
         )
         .width(Length::Fill)
         .height(Length::Fill)
@@ -675,33 +758,90 @@ impl App {
 // ─────────────────────── 화면: 오류 ─────────────────────────
 
     fn view_error(&self, err: &str) -> Element<'_, Msg> {
-        let content = column![
-            text("설치 실패").size(26).style(Color { r: 1.0, g: 0.4, b: 0.4, a: 1.0 }),
-            Space::with_height(4),
-            container(
-                scrollable(
-                    container(
-                        text(err).size(11)
-                            .font(iced::Font::with_name("Malgun Gothic"))
-                            .style(TEXT_MUTED)
-                    )
-                    .padding(12)
-                    .width(Length::Fill)
-                )
-                .height(Length::Fixed(300.0))
-            )
-            .style(iced::theme::Container::Custom(Box::new(LogStyle)))
-            .width(Length::Fill),
+        let red = Color { r: 1.0, g: 0.40, b: 0.42, a: 1.0 };
+        let red_dim = Color { r: 1.0, g: 0.65, b: 0.66, a: 1.0 };
 
+        let step_name = if self.current_step_label.is_empty() {
+            "(단계 미상)".to_string()
+        } else {
+            self.current_step_label.clone()
+        };
+
+        // 단계 진입 후 메시지들 — Error 발생 직전 상태가 그대로 남아있음.
+        // 마지막 줄이 [x] err 일 가능성 — 중복 회피 위해 err 와 같은 줄은 제거.
+        let step_lines: Vec<&str> = self.log_lines
+            .iter()
+            .map(|s| s.as_str())
+            .filter(|s| !s.contains(err))
+            .collect();
+        let step_log_joined = step_lines.join("\n");
+
+        // 헤더 카드 — 멈춘 단계 강조
+        let stop_card = container(
+            column![
+                text("멈춘 단계").size(11).style(red_dim),
+                text(&step_name).size(18).style(TEXT),
+            ].spacing(4)
+        )
+        .padding([14, 18])
+        .width(Length::Fill)
+        .style(iced::theme::Container::Custom(Box::new(CardStyle)));
+
+        // 에러 메시지 박스
+        let err_box = container(
+            scrollable(
+                container(
+                    text(err).size(12)
+                        .font(iced::Font::with_name("Malgun Gothic"))
+                        .style(TEXT)
+                )
+                .padding(12)
+                .width(Length::Fill)
+            )
+            .height(Length::Fixed(110.0))
+        )
+        .style(iced::theme::Container::Custom(Box::new(LogStyle)))
+        .width(Length::Fill);
+
+        // 단계 진입 후 발생한 메시지 (있을 때만)
+        let step_log_section: Element<'_, Msg> = if step_log_joined.is_empty() {
+            Space::with_height(0).into()
+        } else {
+            column![
+                text("이 단계의 상세 로그").size(11).style(TEXT_MUTED),
+                container(
+                    scrollable(
+                        container(
+                            text(&step_log_joined).size(11)
+                                .font(iced::Font::with_name("Malgun Gothic"))
+                                .style(TEXT_MUTED)
+                        )
+                        .padding(12)
+                        .width(Length::Fill)
+                    )
+                    .height(Length::Fixed(160.0))
+                )
+                .style(iced::theme::Container::Custom(Box::new(LogStyle)))
+                .width(Length::Fill),
+            ].spacing(6).into()
+        };
+
+        let content = column![
+            text("설치 실패").size(28).style(red),
+            Space::with_height(8),
+            stop_card,
+            Space::with_height(2),
+            err_box,
+            step_log_section,
             Space::with_height(8),
             button(text("닫기").size(14))
                 .on_press(Msg::Close)
                 .style(iced::theme::Button::Custom(Box::new(BtnNormal)))
                 .padding([10, 20]),
         ]
-        .spacing(12)
+        .spacing(8)
         .align_items(Alignment::Center)
-        .max_width(580);
+        .max_width(640);
 
         container(
             container(content)
