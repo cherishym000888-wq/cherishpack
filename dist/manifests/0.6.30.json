@@ -7,7 +7,7 @@
     "version": "21.1.220"
   },
   "mrpack_url": "https://github.com/cherishym000888-wq/cherishpack/releases/download/v0.6.30/cherishpack-0.6.30.mrpack",
-  "mrpack_sha256": "063cfa080a1b0b9faab1140131b043a733368797ec78a4796ee29e41063e5b9d",
+  "mrpack_sha256": "a5e415766effcd30f3ef4fedfafa5ab2eedb9d00cb7606d2a400d9153e189575",
   "preserve": [
     "options.txt",
     "optionsof.txt",
