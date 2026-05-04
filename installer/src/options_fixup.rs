@@ -19,6 +19,11 @@ const SENDPOKEMON_KEY: &str = "key_key.sendpokemon";
 pub fn apply(minecraft_root: &Path) -> Result<()> {
     let path = minecraft_root.join("options.txt");
     if !path.exists() {
+        // 신규 설치: MC 첫 실행 전에 Iris reload 사전 unbind.
+        // MC 가 나머지 설정을 디폴트로 채워 넣음.
+        std::fs::write(&path, format!("{IRIS_RELOAD_KEY}:key.keyboard.unknown\n"))
+            .with_context(|| format!("options.txt 생성 실패: {}", path.display()))?;
+        tracing::info!("options.txt: 신규 생성 (Iris reload 사전 unbind)");
         return Ok(());
     }
 
