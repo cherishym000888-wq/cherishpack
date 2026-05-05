@@ -306,13 +306,16 @@ fn install_cherish_boot_experience(dirs: &crate::paths::AppDirs) -> Result<()> {
     // Prism 은 기본적으로 `<prism>/libraries/` 에 공유.
     let libs_dir = dirs.prism_root.join("libraries");
 
+    // Qt QSettings 가 INI 의 백슬래시를 escape character 로 해석해 사라뜨리는 문제를
+    // 피하려고 forward slash 로 정규화한다. cmd.exe / Java agent 모두 forward slash 를
+    // 동등하게 인식하므로 동작에는 영향 없음.
+    let exe_fwd = exe_dst.display().to_string().replace('\\', "/");
+    let libs_fwd = libs_dir.display().to_string().replace('\\', "/");
+    let agent_fwd = agent_dst.display().to_string().replace('\\', "/");
+
     // 경로에 스페이스가 있을 수 있으니 반드시 따옴표로 감쌈.
-    let pre_launch_cmd = format!(
-        "\"{}\" --patch-libs \"{}\"",
-        exe_dst.display(),
-        libs_dir.display()
-    );
-    let jvm_args = format!("-javaagent:{}", agent_dst.display());
+    let pre_launch_cmd = format!("\"{}\" --patch-libs \"{}\"", exe_fwd, libs_fwd);
+    let jvm_args = format!("-javaagent:{}", agent_fwd);
 
     crate::prism::set_instance_cfg_kv(dirs, &[
         ("OverrideJavaArgs", "true"),
