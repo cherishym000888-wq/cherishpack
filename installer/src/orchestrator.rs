@@ -231,8 +231,12 @@ async fn run_inner(
     }
     let icon_opt = if icon_path.exists() { Some(icon_path.as_path()) } else { None };
 
-    let exe = dirs.prism_root.join("prismlauncher.exe");
-    let args = format!("-l {}", crate::paths::INSTANCE_NAME);
+    // 바로가기는 cherishworld.exe wrapper 로 통한다 — prism 의 PreLaunchCommand 가
+    // 작동하지 않는 문제 우회. cherishworld.exe --launch-game 이 (1) earlydisplay jar
+    // 패치 (fox/squirrel/font 교체) 후 (2) prismlauncher -l cherishpack spawn 한다.
+    // ColourScheme 색상 변환은 boot-agent javaagent (ClassFileTransformer) 가 담당.
+    let exe = dirs.prism_root.join("cherishworld.exe");
+    let args = "--launch-game".to_string();
     match shortcut::create_desktop_shortcut("체리쉬월드", &exe, &args, &dirs.prism_root, icon_opt) {
         Ok(_) => info!("바탕화면 바로가기 '체리쉬월드' 생성"),
         Err(e) => warn_!("바탕화면 바로가기 생성 실패: {e:#}"),
@@ -287,9 +291,11 @@ async fn run_inner(
 }
 
 /// Prism 경로용 부팅 경험 설정.
-///   - installer exe 를 `<prism>/cherishworld.exe` 로 사본 (PreLaunchCommand 안정 참조)
+///   - installer exe 를 `<prism>/cherishworld.exe` 로 사본 (바로가기 wrapper)
 ///   - boot-agent.jar 를 `<prism>/cherish-boot-agent.jar` 에 배치
-///   - instance.cfg 에 OverrideJavaArgs=true + JvmArgs=-javaagent + PreLaunchCommand 추가
+///   - instance.cfg 에 OverrideJavaArgs=true + JvmArgs=-javaagent 만 시드.
+///     PreLaunchCommand 는 prism 이 키를 인식하지 않아 작동하지 않으므로 사용 안 함.
+///     대신 cherishworld.exe --launch-game wrapper 가 prism spawn 직전 jar 패치 담당.
 ///   - options.txt 의 music 카테고리를 0.0 으로
 fn install_cherish_boot_experience(dirs: &crate::paths::AppDirs) -> Result<()> {
     let exe_src = std::env::current_exe().context("current_exe 실패")?;
@@ -302,26 +308,15 @@ fn install_cherish_boot_experience(dirs: &crate::paths::AppDirs) -> Result<()> {
     let agent_dst = dirs.prism_root.join("cherish-boot-agent.jar");
     crate::boot_agent::ensure_installed(&agent_dst)?;
 
-    // Prism libraries 경로 — 공유 설치면 prism_root/libraries, 인스턴스 전용이면 instance_root/libraries
-    // Prism 은 기본적으로 `<prism>/libraries/` 에 공유.
-    let libs_dir = dirs.prism_root.join("libraries");
-
-    // Qt QSettings 가 INI 의 백슬래시를 escape character 로 해석해 사라뜨리는 문제를
-    // 피하려고 forward slash 로 정규화한다. cmd.exe / Java agent 모두 forward slash 를
-    // 동등하게 인식하므로 동작에는 영향 없음.
-    let exe_fwd = exe_dst.display().to_string().replace('\\', "/");
-    let libs_fwd = libs_dir.display().to_string().replace('\\', "/");
+    // forward slash 로 정규화 — Qt QSettings INI escape 이슈 회피.
     let agent_fwd = agent_dst.display().to_string().replace('\\', "/");
-
-    // 경로에 스페이스가 있을 수 있으니 반드시 따옴표로 감쌈.
-    let pre_launch_cmd = format!("\"{}\" --patch-libs \"{}\"", exe_fwd, libs_fwd);
-    let jvm_args = format!("-javaagent:{}", agent_fwd);
+    // ZGC + generational mode — Distant Horizons 가 G1 사용 시 FPS stuttering 경고를
+    // 띄우는 문제 회피. Java 21+ 에서 ZGC 가 더 짧은 pause 를 제공.
+    let jvm_args = format!("-javaagent:{} -XX:+UseZGC -XX:+ZGenerational", agent_fwd);
 
     crate::prism::set_instance_cfg_kv(dirs, &[
         ("OverrideJavaArgs", "true"),
         ("JvmArgs", &jvm_args),
-        ("OverrideCommands", "true"),
-        ("PreLaunchCommand", &pre_launch_cmd),
     ])?;
 
     // MC 자체 music 뮤트 (자체 부팅 BGM 과 겹치지 않도록)

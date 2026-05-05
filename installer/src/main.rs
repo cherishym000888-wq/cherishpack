@@ -77,6 +77,25 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    // 3.2 바탕화면 바로가기 launcher wrapper — `--launch-game` 으로 호출되면
+    //   (1) earlydisplay jar 패치 (fox/squirrel/Monocraft 리소스 교체) 후
+    //   (2) Prism Launcher 를 인스턴스 자동실행 모드로 spawn 한 뒤 즉시 종료.
+    //   prism 의 PreLaunchCommand 가 작동하지 않는 문제(prism 이 키를 인식 안 함)
+    //   를 우회. boot-agent javaagent 의 ColourSchemeTransformer 가 색상 변환을,
+    //   여기서 jar 패치가 fox/squirrel/font 교체를 담당.
+    if args.iter().any(|a| a == "--launch-game") {
+        let libs = dirs.prism_root.join("libraries");
+        if let Err(e) = patch_early_display::apply_if_needed(&libs) {
+            error!("earlydisplay 패치 실패 (계속 진행): {e:#}");
+        }
+        let prism_exe = dirs.prism_root.join("prismlauncher.exe");
+        if let Err(e) = prism::spawn_detached(&prism_exe, &dirs.prism_root) {
+            error!("Prism 실행 실패: {e:#}");
+            return Err(e);
+        }
+        return Ok(());
+    }
+
     // 3.5. (offline 빌드 한정) `--offline <nick>` — Prism 우회, 자체 런처로 헤드리스 실행.
     //      `-l` — launch-only (캐시된 닉네임으로 바로 게임 실행). 바탕화면 바로가기에서 사용.
     #[cfg(feature = "offline")]
