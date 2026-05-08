@@ -1,13 +1,13 @@
 {
   "pack_version": "0.6.43",
-  "released_at": "2026-05-07T19:54:13Z",
+  "released_at": "2026-05-08T02:57:31Z",
   "minecraft": "1.21.1",
   "loader": {
     "type": "neoforge",
     "version": "21.1.220"
   },
   "mrpack_url": "https://github.com/cherishym000888-wq/cherishpack/releases/download/v0.6.43/cherishpack-0.6.43.mrpack",
-  "mrpack_sha256": "faba73495735025afdc0f471ebc73c9ddeef098cf21a7ada5720169acf6c8c55",
+  "mrpack_sha256": "56f68af813c7f9a8b859bf904e3b1d72eea7a84739922ed4de796c463a731a8c",
   "preserve": [
     "options.txt",
     "optionsof.txt",
