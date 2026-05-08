@@ -132,7 +132,7 @@ pub async fn ensure_installed(
 
 /// 기존 시스템의 PrismLauncher / PolyMC / MultiMC 설치에서 `accounts.json` 을
 /// 포터블 Prism 루트로 복사. 이미 대상 파일이 있으면 건드리지 않는다.
-/// 데모 모드로 실행되어 Pixelmon 메인메뉴에서 NPE로 크래시 나는 문제 회피.
+/// 데모 모드로 실행되어 외부 모드 메인메뉴에서 NPE로 크래시 나는 문제 회피.
 pub fn import_accounts_if_missing(dirs: &AppDirs) -> Result<bool> {
     let dst = dirs.prism_root.join("accounts.json");
     if dst.exists() {
