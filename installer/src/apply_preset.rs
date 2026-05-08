@@ -37,7 +37,7 @@ pub fn preset_assets(preset: &str) -> PresetAssets<'static> {
         "high_plus" => PresetAssets {
             key: "high_plus",
             shader_pack: Some("RethinkingVoxels.zip"),
-            resource_packs: vec!["cherishpack-ko.zip", "Faithful64x.zip"],
+            resource_packs: vec!["Faithful64x.zip"],
             render_distance: 12,
             max_fps: 120,
             dh_chunks: 96,
@@ -47,7 +47,7 @@ pub fn preset_assets(preset: &str) -> PresetAssets<'static> {
         "high" => PresetAssets {
             key: "high",
             shader_pack: Some("ComplementaryUnbound.zip"),
-            resource_packs: vec!["cherishpack-ko.zip", "Faithful64x.zip"],
+            resource_packs: vec!["Faithful64x.zip"],
             render_distance: 16,
             max_fps: 144,
             dh_chunks: 128,
@@ -57,7 +57,7 @@ pub fn preset_assets(preset: &str) -> PresetAssets<'static> {
         "medium" => PresetAssets {
             key: "medium",
             shader_pack: Some("ComplementaryReimagined.zip"),
-            resource_packs: vec!["cherishpack-ko.zip", "Faithful64x.zip"],
+            resource_packs: vec!["Faithful64x.zip"],
             render_distance: 12,
             max_fps: 120,
             dh_chunks: 64,
@@ -68,7 +68,7 @@ pub fn preset_assets(preset: &str) -> PresetAssets<'static> {
         "verylow" => PresetAssets {
             key: "verylow",
             shader_pack: None,
-            resource_packs: vec!["cherishpack-ko.zip", "BareBones.zip"],
+            resource_packs: vec!["BareBones.zip"],
             render_distance: 4,
             max_fps: 30,
             dh_chunks: 0,
@@ -78,7 +78,7 @@ pub fn preset_assets(preset: &str) -> PresetAssets<'static> {
         _ => PresetAssets {
             key: "low",
             shader_pack: None,
-            resource_packs: vec!["cherishpack-ko.zip", "BareBones.zip"],
+            resource_packs: vec!["BareBones.zip"],
             render_distance: 6,
             max_fps: 60,
             dh_chunks: 16,
